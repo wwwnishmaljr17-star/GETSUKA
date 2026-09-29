@@ -184,6 +184,14 @@ const UpdateProfilePage = () => {
   }, [navigate]);
 
   // ============================================
+  // GOOGLE LOGIN USER
+  // ============================================
+
+  const isGoogleUser =
+    user?.authProvider === "google" ||
+    Boolean(user?.googleId);
+
+  // ============================================
   // OTP TIMER
   // ============================================
 
@@ -232,6 +240,14 @@ const UpdateProfilePage = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    // Google users cannot change email
+    if (
+      name === "email" &&
+      isGoogleUser
+    ) {
+      return;
+    }
 
     setFormData((previous) => ({
       ...previous,
@@ -376,6 +392,10 @@ const UpdateProfilePage = () => {
         data.user.profileImage || "",
       isVerified:
         data.user.isVerified,
+      authProvider:
+        data.user.authProvider || "local",
+      googleId:
+        data.user.googleId || "",
     };
 
     if (
@@ -422,6 +442,26 @@ const UpdateProfilePage = () => {
       user.email.trim().toLowerCase();
 
     // ========================================
+    // GOOGLE USER EMAIL PROTECTION
+    // ========================================
+
+    if (
+      isGoogleUser &&
+      newEmail !== currentEmail
+    ) {
+      setFormData((previous) => ({
+        ...previous,
+        email: user.email || "",
+      }));
+
+      setError(
+        "Google login accounts cannot change their email address."
+      );
+
+      return;
+    }
+
+    // ========================================
     // EMAIL NOT CHANGED
     // ========================================
 
@@ -459,6 +499,15 @@ const UpdateProfilePage = () => {
     // ========================================
     // EMAIL CHANGED
     // ========================================
+
+    // Extra protection for Google accounts
+    if (isGoogleUser) {
+      setError(
+        "Google login accounts cannot change their email address."
+      );
+
+      return;
+    }
 
     try {
       setSaving(true);
@@ -734,7 +783,7 @@ const UpdateProfilePage = () => {
   // ============================================
 
   const handleResendOtp = async () => {
-    if (!pendingEmail) {
+    if (!pendingEmail || isGoogleUser) {
       return;
     }
 
@@ -868,18 +917,33 @@ const UpdateProfilePage = () => {
     setPasswordError("");
     setPasswordSuccess("");
 
+    // Google users cannot change password
+    if (isGoogleUser) {
+      setPasswordError(
+        "Google login accounts cannot change their password."
+      );
+
+      return;
+    }
+
     if (!passwordData.currentPassword) {
-      setPasswordError("Current password is required.");
+      setPasswordError(
+        "Current password is required."
+      );
       return;
     }
 
     if (!passwordData.newPassword) {
-      setPasswordError("New password is required.");
+      setPasswordError(
+        "New password is required."
+      );
       return;
     }
 
     if (!passwordData.confirmPassword) {
-      setPasswordError("Please confirm your new password.");
+      setPasswordError(
+        "Please confirm your new password."
+      );
       return;
     }
 
@@ -1180,7 +1244,9 @@ const UpdateProfilePage = () => {
               type="button"
               onClick={() => navigate("/account")}
               className={`text-left text-[11px] tracking-wide py-2 transition ${
-                isActive("/account") ? "text-white" : "text-gray-500"
+                isActive("/account")
+                  ? "text-white"
+                  : "text-gray-500"
               }`}
             >
               ACCOUNT DETAILS
@@ -1188,9 +1254,13 @@ const UpdateProfilePage = () => {
 
             <button
               type="button"
-              onClick={() => navigate("/account/update-profile")}
+              onClick={() =>
+                navigate("/account/update-profile")
+              }
               className={`text-left text-[11px] tracking-wide py-2 transition ${
-                isActive("/account/update-profile") ? "text-white" : "text-gray-500"
+                isActive("/account/update-profile")
+                  ? "text-white"
+                  : "text-gray-500"
               }`}
             >
               PERSONAL INFORMATION
@@ -1198,9 +1268,13 @@ const UpdateProfilePage = () => {
 
             <button
               type="button"
-              onClick={() => navigate("/account/orders")}
+              onClick={() =>
+                navigate("/account/orders")
+              }
               className={`text-left text-[11px] tracking-wide py-2 transition ${
-                isActive("/account/orders") ? "text-white" : "text-gray-500"
+                isActive("/account/orders")
+                  ? "text-white"
+                  : "text-gray-500"
               }`}
             >
               ORDER HISTORY
@@ -1208,9 +1282,13 @@ const UpdateProfilePage = () => {
 
             <button
               type="button"
-              onClick={() => navigate("/account/addresses")}
+              onClick={() =>
+                navigate("/account/addresses")
+              }
               className={`text-left text-[11px] tracking-wide py-2 transition ${
-                isActive("/account/addresses") ? "text-white" : "text-gray-500"
+                isActive("/account/addresses")
+                  ? "text-white"
+                  : "text-gray-500"
               }`}
             >
               SAVED ADDRESSES
@@ -1218,7 +1296,9 @@ const UpdateProfilePage = () => {
 
             <button
               type="button"
-              onClick={() => navigate("/account/referral")}
+              onClick={() =>
+                navigate("/account/referral")
+              }
               className="text-left text-[11px] tracking-wide py-2 text-gray-500 hover:text-white transition"
             >
               REFER & EARN
@@ -1226,7 +1306,9 @@ const UpdateProfilePage = () => {
 
             <button
               type="button"
-              onClick={() => navigate("/account/wallet")}
+              onClick={() =>
+                navigate("/account/wallet")
+              }
               className="text-left text-[11px] tracking-wide py-2 text-gray-500 hover:text-white transition"
             >
               MY WALLET
@@ -1238,7 +1320,9 @@ const UpdateProfilePage = () => {
 
             <button
               type="button"
-              onClick={() => setShowLogoutModal(true)}
+              onClick={() =>
+                setShowLogoutModal(true)
+              }
               className="text-[11px] tracking-wide text-red-500 hover:text-red-400 transition"
             >
               SIGN OUT
@@ -1365,8 +1449,25 @@ const UpdateProfilePage = () => {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="Enter your email"
-                    className="w-full h-[48px] bg-transparent border border-white/15 px-4 text-[13px] text-white outline-none focus:border-white transition"
+                    readOnly={isGoogleUser}
+                    disabled={isGoogleUser}
+                    title={
+                      isGoogleUser
+                        ? "Google login accounts cannot change their email address"
+                        : undefined
+                    }
+                    className={`w-full h-[48px] bg-transparent border border-white/15 px-4 text-[13px] outline-none transition ${
+                      isGoogleUser
+                        ? "text-gray-500 cursor-not-allowed bg-white/[0.02]"
+                        : "text-white focus:border-white"
+                    }`}
                   />
+
+                  {isGoogleUser && (
+                    <p className="text-[10px] text-gray-600 mt-2">
+                      Email is managed through Google login.
+                    </p>
+                  )}
 
                 </div>
 
@@ -1459,42 +1560,44 @@ const UpdateProfilePage = () => {
               PASSWORD & SECURITY
           ==================================== */}
 
-          <div className="border border-white/10 bg-[#0b0b0b] mt-5 px-5 sm:px-9 py-6 sm:py-7">
+          {!isGoogleUser && (
+            <div className="border border-white/10 bg-[#0b0b0b] mt-5 px-5 sm:px-9 py-6 sm:py-7">
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
 
-              <div>
+                <div>
 
-                <h2 className="text-[18px]">
-                  Password & Security
-                </h2>
+                  <h2 className="text-[18px]">
+                    Password & Security
+                  </h2>
 
-                <p className="text-[12px] text-gray-500 mt-2">
-                  Manage your account password.
-                </p>
+                  <p className="text-[12px] text-gray-500 mt-2">
+                    Manage your account password.
+                  </p>
+
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordError("");
+                    setPasswordSuccess("");
+                    setPasswordData({
+                      currentPassword: "",
+                      newPassword: "",
+                      confirmPassword: "",
+                    });
+                    setShowPasswordModal(true);
+                  }}
+                  className="text-[11px] text-gray-300 hover:text-white transition"
+                >
+                  CHANGE PASSWORD →
+                </button>
 
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setPasswordError("");
-                  setPasswordSuccess("");
-                  setPasswordData({
-                    currentPassword: "",
-                    newPassword: "",
-                    confirmPassword: "",
-                  });
-                  setShowPasswordModal(true);
-                }}
-                className="text-[11px] text-gray-300 hover:text-white transition"
-              >
-                CHANGE PASSWORD →
-              </button>
-
             </div>
-
-          </div>
+          )}
 
         </section>
 
@@ -1504,402 +1607,404 @@ const UpdateProfilePage = () => {
           EMAIL OTP MODAL
       ======================================== */}
 
-      {showEmailOtpModal && (
-        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-md flex items-center justify-center px-4 sm:px-5 py-5 overflow-y-auto">
+      {showEmailOtpModal &&
+        !isGoogleUser && (
+          <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-md flex items-center justify-center px-4 sm:px-5 py-5 overflow-y-auto">
 
-          <div className="w-full max-w-[470px] max-h-[calc(100vh-40px)] overflow-y-auto bg-[#111111] border border-white/10">
+            <div className="w-full max-w-[470px] max-h-[calc(100vh-40px)] overflow-y-auto bg-[#111111] border border-white/10">
 
-            {/* HEADER */}
+              {/* HEADER */}
 
-            <div className="px-5 sm:px-7 py-6 border-b border-white/10 flex items-start justify-between gap-4">
+              <div className="px-5 sm:px-7 py-6 border-b border-white/10 flex items-start justify-between gap-4">
 
-              <div>
+                <div>
 
-                <p className="text-[10px] tracking-[0.18em] text-gray-500 mb-3">
-                  EMAIL VERIFICATION
-                </p>
-
-                <h2 className="text-[21px]">
-                  Verify New Email
-                </h2>
-
-                <p className="text-[11px] text-gray-500 mt-2 leading-5">
-                  We sent a 6-digit verification
-                  code to
-                </p>
-
-                <p className="text-[12px] text-white mt-1 break-all">
-                  {pendingEmail}
-                </p>
-
-              </div>
-
-              <button
-                type="button"
-                onClick={closeEmailOtpModal}
-                disabled={otpLoading}
-                className="text-gray-500 hover:text-white text-xl disabled:opacity-40"
-              >
-                ×
-              </button>
-
-            </div>
-
-            {/* ==================================
-                6 DIGIT OTP
-            ================================== */}
-
-            <div className="px-5 sm:px-7 py-6 sm:py-7">
-
-              <div
-                className="flex justify-center gap-1.5 sm:gap-3"
-                onPaste={handleOtpPaste}
-              >
-
-                {/* BOX 1 */}
-
-                <input
-                  id="email-otp-0"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otp[0]}
-                  onChange={(e) =>
-                    handleOtpChange(
-                      0,
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) =>
-                    handleOtpKeyDown(
-                      0,
-                      e
-                    )
-                  }
-                  className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
-                  autoFocus
-                />
-
-                {/* BOX 2 */}
-
-                <input
-                  id="email-otp-1"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otp[1]}
-                  onChange={(e) =>
-                    handleOtpChange(
-                      1,
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) =>
-                    handleOtpKeyDown(
-                      1,
-                      e
-                    )
-                  }
-                  className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
-                />
-
-                {/* BOX 3 */}
-
-                <input
-                  id="email-otp-2"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otp[2]}
-                  onChange={(e) =>
-                    handleOtpChange(
-                      2,
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) =>
-                    handleOtpKeyDown(
-                      2,
-                      e
-                    )
-                  }
-                  className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
-                />
-
-                {/* BOX 4 */}
-
-                <input
-                  id="email-otp-3"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otp[3]}
-                  onChange={(e) =>
-                    handleOtpChange(
-                      3,
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) =>
-                    handleOtpKeyDown(
-                      3,
-                      e
-                    )
-                  }
-                  className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
-                />
-
-                {/* BOX 5 */}
-
-                <input
-                  id="email-otp-4"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otp[4]}
-                  onChange={(e) =>
-                    handleOtpChange(
-                      4,
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) =>
-                    handleOtpKeyDown(
-                      4,
-                      e
-                    )
-                  }
-                  className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
-                />
-
-                {/* BOX 6 */}
-
-                <input
-                  id="email-otp-5"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otp[5]}
-                  onChange={(e) =>
-                    handleOtpChange(
-                      5,
-                      e.target.value
-                    )
-                  }
-                  onKeyDown={(e) =>
-                    handleOtpKeyDown(
-                      5,
-                      e
-                    )
-                  }
-                  className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
-                />
-
-              </div>
-
-              {/* TIMER */}
-
-              <div className="mt-5 text-center">
-
-                {otpTimeLeft > 0 ? (
-                  <p className="text-[11px] text-gray-500">
-                    OTP expires in{" "}
-                    <span className="text-white">
-                      {formatOtpTime()}
-                    </span>
+                  <p className="text-[10px] tracking-[0.18em] text-gray-500 mb-3">
+                    EMAIL VERIFICATION
                   </p>
-                ) : (
-                  <p className="text-[11px] text-red-500">
-                    OTP expired
+
+                  <h2 className="text-[21px]">
+                    Verify New Email
+                  </h2>
+
+                  <p className="text-[11px] text-gray-500 mt-2 leading-5">
+                    We sent a 6-digit verification
+                    code to
                   </p>
-                )}
 
-              </div>
+                  <p className="text-[12px] text-white mt-1 break-all">
+                    {pendingEmail}
+                  </p>
 
-              {/* ERROR */}
-
-              {otpError && (
-                <p className="text-[11px] text-red-500 text-center mt-4">
-                  {otpError}
-                </p>
-              )}
-
-              {/* VERIFY */}
-
-              <button
-                type="button"
-                onClick={
-                  handleVerifyEmailOtp
-                }
-                disabled={
-                  otpLoading ||
-                  otpTimeLeft <= 0
-                }
-                className="w-full h-[44px] mt-6 bg-white text-black text-[10px] tracking-[0.12em] hover:bg-gray-200 transition disabled:opacity-40"
-              >
-                {otpLoading
-                  ? "VERIFYING..."
-                  : "VERIFY EMAIL"}
-              </button>
-
-              {/* RESEND */}
-
-              <div className="text-center mt-5">
+                </div>
 
                 <button
                   type="button"
-                  onClick={handleResendOtp}
+                  onClick={closeEmailOtpModal}
+                  disabled={otpLoading}
+                  className="text-gray-500 hover:text-white text-xl disabled:opacity-40"
+                >
+                  ×
+                </button>
+
+              </div>
+
+              {/* ==================================
+                  6 DIGIT OTP
+              ================================== */}
+
+              <div className="px-5 sm:px-7 py-6 sm:py-7">
+
+                <div
+                  className="flex justify-center gap-1.5 sm:gap-3"
+                  onPaste={handleOtpPaste}
+                >
+
+                  {/* BOX 1 */}
+
+                  <input
+                    id="email-otp-0"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={otp[0]}
+                    onChange={(e) =>
+                      handleOtpChange(
+                        0,
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) =>
+                      handleOtpKeyDown(
+                        0,
+                        e
+                      )
+                    }
+                    className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
+                    autoFocus
+                  />
+
+                  {/* BOX 2 */}
+
+                  <input
+                    id="email-otp-1"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={otp[1]}
+                    onChange={(e) =>
+                      handleOtpChange(
+                        1,
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) =>
+                      handleOtpKeyDown(
+                        1,
+                        e
+                      )
+                    }
+                    className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
+                  />
+
+                  {/* BOX 3 */}
+
+                  <input
+                    id="email-otp-2"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={otp[2]}
+                    onChange={(e) =>
+                      handleOtpChange(
+                        2,
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) =>
+                      handleOtpKeyDown(
+                        2,
+                        e
+                      )
+                    }
+                    className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
+                  />
+
+                  {/* BOX 4 */}
+
+                  <input
+                    id="email-otp-3"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={otp[3]}
+                    onChange={(e) =>
+                      handleOtpChange(
+                        3,
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) =>
+                      handleOtpKeyDown(
+                        3,
+                        e
+                      )
+                    }
+                    className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
+                  />
+
+                  {/* BOX 5 */}
+
+                  <input
+                    id="email-otp-4"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={otp[4]}
+                    onChange={(e) =>
+                      handleOtpChange(
+                        4,
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) =>
+                      handleOtpKeyDown(
+                        4,
+                        e
+                      )
+                    }
+                    className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
+                  />
+
+                  {/* BOX 6 */}
+
+                  <input
+                    id="email-otp-5"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={otp[5]}
+                    onChange={(e) =>
+                      handleOtpChange(
+                        5,
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) =>
+                      handleOtpKeyDown(
+                        5,
+                        e
+                      )
+                    }
+                    className="w-[40px] h-[50px] sm:w-[50px] sm:h-[56px] bg-[#080808] border border-white/15 text-white text-center text-[20px] outline-none focus:border-white transition"
+                  />
+
+                </div>
+
+                {/* TIMER */}
+
+                <div className="mt-5 text-center">
+
+                  {otpTimeLeft > 0 ? (
+                    <p className="text-[11px] text-gray-500">
+                      OTP expires in{" "}
+                      <span className="text-white">
+                        {formatOtpTime()}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-red-500">
+                      OTP expired
+                    </p>
+                  )}
+
+                </div>
+
+                {/* ERROR */}
+
+                {otpError && (
+                  <p className="text-[11px] text-red-500 text-center mt-4">
+                    {otpError}
+                  </p>
+                )}
+
+                {/* VERIFY */}
+
+                <button
+                  type="button"
+                  onClick={
+                    handleVerifyEmailOtp
+                  }
                   disabled={
                     otpLoading ||
-                    otpTimeLeft > 0
+                    otpTimeLeft <= 0
                   }
-                  className="text-[10px] tracking-[0.1em] text-gray-400 hover:text-white transition disabled:opacity-30"
+                  className="w-full h-[44px] mt-6 bg-white text-black text-[10px] tracking-[0.12em] hover:bg-gray-200 transition disabled:opacity-40"
                 >
-                  RESEND OTP
+                  {otpLoading
+                    ? "VERIFYING..."
+                    : "VERIFY EMAIL"}
                 </button>
+
+                {/* RESEND */}
+
+                <div className="text-center mt-5">
+
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={
+                      otpLoading ||
+                      otpTimeLeft > 0
+                    }
+                    className="text-[10px] tracking-[0.1em] text-gray-400 hover:text-white transition disabled:opacity-30"
+                  >
+                    RESEND OTP
+                  </button>
+
+                </div>
 
               </div>
 
             </div>
 
           </div>
-
-        </div>
-      )}
+        )}
 
       {/* ========================================
           CHANGE PASSWORD MODAL
       ======================================== */}
 
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center px-4 sm:px-5 py-5 overflow-y-auto">
+      {showPasswordModal &&
+        !isGoogleUser && (
+          <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center px-4 sm:px-5 py-5 overflow-y-auto">
 
-          <div className="w-full max-w-[430px] max-h-[calc(100vh-40px)] overflow-y-auto bg-[#111111] border border-white/10">
+            <div className="w-full max-w-[430px] max-h-[calc(100vh-40px)] overflow-y-auto bg-[#111111] border border-white/10">
 
-            <div className="px-5 sm:px-7 py-6 border-b border-white/10 flex items-center justify-between gap-4">
+              <div className="px-5 sm:px-7 py-6 border-b border-white/10 flex items-center justify-between gap-4">
 
-              <div>
+                <div>
 
-                <h2 className="text-[20px]">
-                  Change Password
-                </h2>
+                  <h2 className="text-[20px]">
+                    Change Password
+                  </h2>
 
-                <p className="text-[11px] text-gray-500 mt-2">
-                  Update your GETSUKA account password.
-                </p>
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    Update your GETSUKA account password.
+                  </p>
 
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setShowPasswordModal(false)
-                }
-                className="text-gray-500 hover:text-white text-xl"
-              >
-                ×
-              </button>
-
-            </div>
-
-            <div className="px-5 sm:px-7 py-6 sm:py-7 space-y-5">
-
-              {passwordError && (
-                <p className="text-[11px] text-red-500">
-                  {passwordError}
-                </p>
-              )}
-
-              {passwordSuccess && (
-                <p className="text-[11px] text-green-500">
-                  {passwordSuccess}
-                </p>
-              )}
-
-              <div>
-
-                <label className="block text-[10px] tracking-[0.15em] text-gray-500 mb-2">
-                  CURRENT PASSWORD
-                </label>
-
-                <input
-                  type="password"
-                  name="currentPassword"
-                  value={passwordData.currentPassword}
-                  onChange={handlePasswordChange}
-                  placeholder="Enter current password"
-                  autoComplete="current-password"
-                  className="w-full h-[45px] bg-[#080808] border border-white/15 px-3 text-[12px] outline-none focus:border-white"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="block text-[10px] tracking-[0.15em] text-gray-500 mb-2">
-                  NEW PASSWORD
-                </label>
-
-                <input
-                  type="password"
-                  name="newPassword"
-                  value={passwordData.newPassword}
-                  onChange={handlePasswordChange}
-                  placeholder="Enter new password"
-                  autoComplete="new-password"
-                  className="w-full h-[45px] bg-[#080808] border border-white/15 px-3 text-[12px] outline-none focus:border-white"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="block text-[10px] tracking-[0.15em] text-gray-500 mb-2">
-                  CONFIRM PASSWORD
-                </label>
-
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={passwordData.confirmPassword}
-                  onChange={handlePasswordChange}
-                  placeholder="Confirm new password"
-                  autoComplete="new-password"
-                  className="w-full h-[45px] bg-[#080808] border border-white/15 px-3 text-[12px] outline-none focus:border-white"
-                />
-
-              </div>
-
-              <div className="flex gap-3 pt-3">
+                </div>
 
                 <button
                   type="button"
                   onClick={closePasswordModal}
-                  disabled={passwordLoading}
-                  className="flex-1 h-[42px] border border-white/15 text-[10px] hover:border-white transition disabled:opacity-40"
+                  className="text-gray-500 hover:text-white text-xl"
                 >
-                  CANCEL
+                  ×
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleChangePassword}
-                  disabled={passwordLoading}
-                  className="flex-1 h-[42px] bg-white text-black text-[10px] hover:bg-gray-200 transition disabled:opacity-40"
-                >
-                  {passwordLoading
-                    ? "UPDATING..."
-                    : "UPDATE PASSWORD"}
-                </button>
+              </div>
+
+              <div className="px-5 sm:px-7 py-6 sm:py-7 space-y-5">
+
+                {passwordError && (
+                  <p className="text-[11px] text-red-500">
+                    {passwordError}
+                  </p>
+                )}
+
+                {passwordSuccess && (
+                  <p className="text-[11px] text-green-500">
+                    {passwordSuccess}
+                  </p>
+                )}
+
+                <div>
+
+                  <label className="block text-[10px] tracking-[0.15em] text-gray-500 mb-2">
+                    CURRENT PASSWORD
+                  </label>
+
+                  <input
+                    type="password"
+                    name="currentPassword"
+                    value={passwordData.currentPassword}
+                    onChange={handlePasswordChange}
+                    placeholder="Enter current password"
+                    autoComplete="current-password"
+                    className="w-full h-[45px] bg-[#080808] border border-white/15 px-3 text-[12px] outline-none focus:border-white"
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="block text-[10px] tracking-[0.15em] text-gray-500 mb-2">
+                    NEW PASSWORD
+                  </label>
+
+                  <input
+                    type="password"
+                    name="newPassword"
+                    value={passwordData.newPassword}
+                    onChange={handlePasswordChange}
+                    placeholder="Enter new password"
+                    autoComplete="new-password"
+                    className="w-full h-[45px] bg-[#080808] border border-white/15 px-3 text-[12px] outline-none focus:border-white"
+                  />
+
+                </div>
+
+                <div>
+
+                  <label className="block text-[10px] tracking-[0.15em] text-gray-500 mb-2">
+                    CONFIRM PASSWORD
+                  </label>
+
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    value={passwordData.confirmPassword}
+                    onChange={handlePasswordChange}
+                    placeholder="Confirm new password"
+                    autoComplete="new-password"
+                    className="w-full h-[45px] bg-[#080808] border border-white/15 px-3 text-[12px] outline-none focus:border-white"
+                  />
+
+                </div>
+
+                <div className="flex gap-3 pt-3">
+
+                  <button
+                    type="button"
+                    onClick={closePasswordModal}
+                    disabled={passwordLoading}
+                    className="flex-1 h-[42px] border border-white/15 text-[10px] hover:border-white transition disabled:opacity-40"
+                  >
+                    CANCEL
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleChangePassword
+                    }
+                    disabled={passwordLoading}
+                    className="flex-1 h-[42px] bg-white text-black text-[10px] hover:bg-gray-200 transition disabled:opacity-40"
+                  >
+                    {passwordLoading
+                      ? "UPDATING..."
+                      : "UPDATE PASSWORD"}
+                  </button>
+
+                </div>
 
               </div>
 
             </div>
 
           </div>
-
-        </div>
-      )}
+        )}
 
       {/* ========================================
           LOGOUT MODAL

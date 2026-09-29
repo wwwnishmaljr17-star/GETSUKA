@@ -8,43 +8,75 @@ const AdminLogoutModal = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#102047]/35 px-4 backdrop-blur-[4px]">
 
-      <div className="w-full max-w-[340px] bg-[#111111] border border-white/10">
+      {/* =====================================================
+          MODAL
+      ===================================================== */}
 
-        {/* HEADER */}
+      <div className="w-full max-w-[370px] overflow-hidden rounded-[16px] border border-[#dfe7f3] bg-white shadow-[0_25px_70px_rgba(30,64,175,0.20)]">
 
-        <div className="px-6 py-5 border-b border-white/10">
+        {/* ===================================================
+            HEADER
+        =================================================== */}
 
-          <h2 className="text-[15px] tracking-wide text-white">
-            LOG OUT
-          </h2>
+        <div className="border-b border-[#edf1f6] px-[22px] py-[20px]">
 
-          <p className="text-[8px] text-gray-500 mt-2">
-            Are you sure you want to log out of the
-            GETSUKA admin panel?
+          <div className="flex items-center gap-[11px]">
+
+            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-blue-50 text-[15px] text-[#1557f5]">
+              ↪
+            </div>
+
+            <div>
+
+              <h2 className="text-[14px] font-semibold text-[#182033]">
+                Log out
+              </h2>
+
+              <p className="mt-[3px] text-[10px] text-[#8b97a8]">
+                GETSUKA Admin Panel
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ===================================================
+            MESSAGE
+        =================================================== */}
+
+        <div className="px-[22px] py-[20px]">
+
+          <p className="text-[12px] leading-[1.7] text-[#59677a]">
+            Are you sure you want to log out of
+            the GETSUKA admin panel?
           </p>
 
         </div>
 
-        {/* ACTIONS */}
+        {/* ===================================================
+            ACTIONS
+        =================================================== */}
 
-        <div className="px-6 py-5 flex gap-3">
+        <div className="flex gap-[9px] border-t border-[#edf1f6] bg-[#fafcff] px-[22px] py-[16px]">
 
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 h-[38px] border border-white/15 text-[8px] tracking-[0.15em] text-gray-400 hover:text-white hover:bg-white/5 transition"
+            className="h-[38px] flex-1 rounded-[8px] border border-[#dce4ee] bg-white text-[10px] font-medium text-[#647286] transition hover:border-[#cbd6e4] hover:bg-[#f6f9fd] hover:text-[#29364a]"
           >
-            CANCEL
+            Cancel
           </button>
 
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 h-[38px] bg-red-500 text-white text-[8px] tracking-[0.15em] hover:bg-red-600 transition"
+            className="h-[38px] flex-1 rounded-[8px] bg-[#1557f5] text-[10px] font-medium text-white shadow-[0_5px_14px_rgba(21,87,245,0.18)] transition hover:bg-[#0d49d8]"
           >
-            LOG OUT →
+            Log Out
           </button>
 
         </div>

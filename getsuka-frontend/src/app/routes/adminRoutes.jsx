@@ -5,60 +5,55 @@ import AdminVerifyOtpPage from "../../features/auth/pages/AdminVerifyOtpPage";
 import AdminResetPasswordPage from "../../features/auth/pages/AdminResetPasswordPage";
 
 import AdminDashboardPage from "../../features/admin-side/dashboard/pages/AdminDashboardPage";
+
+import ProductManagementPage from "../../features/admin-side/product-management/pages/ProductManagementPage";
+import AddProductPage from "../../features/admin-side/product-management/pages/AddProductPage";
+import EditProductPage from "../../features/admin-side/product-management/pages/EditProductPage";
+
+import CategoryManagementPage from "../../features/admin-side/category-management/pages/CategoryManagementPage";
+
 import CustomerManagementPage from "../../features/admin-side/customer-management/pages/CustomerManagementPage";
 
 import AdminProfilePage from "../../features/admin-side/profile/pages/AdminProfilePage";
 import AdminEditProfilePage from "../../features/admin-side/profile/pages/AdminEditProfilePage";
 
+import AdminOrderManagementPage from "../../features/admin-side/order-management/pages/AdminOrderManagementPage";
+import AdminOrderDetailsPage from "../../features/admin-side/order-management/pages/AdminOrderDetailsPage";
+
+import InventoryManagementPage from "../../features/admin-side/inventory/pages/InventoryManagementPage";
+import InventoryDetailsPage from "../../features/admin-side/inventory/pages/InventoryDetailsPage";
+
 import AdminProtectedRoute from "../../shared/components/AdminProtectedRoute";
 import AdminLayout from "../../shared/components/AdminLayout";
 
-
 export const adminRoutes = [
-
-  /* =========================================
-     ADMIN LOGIN
-  ========================================= */
+  // =========================================================
+  // ADMIN AUTH
+  // =========================================================
 
   {
     path: "/admin/login",
     element: <AdminLoginPage />,
   },
 
-
-  /* =========================================
-     ADMIN FORGOT PASSWORD
-  ========================================= */
-
   {
     path: "/admin/forgot-password",
     element: <AdminForgotPasswordPage />,
   },
-
-
-  /* =========================================
-     ADMIN VERIFY OTP
-  ========================================= */
 
   {
     path: "/admin/verify-otp",
     element: <AdminVerifyOtpPage />,
   },
 
-
-  /* =========================================
-     ADMIN RESET PASSWORD
-  ========================================= */
-
   {
     path: "/admin/reset-password",
     element: <AdminResetPasswordPage />,
   },
 
-
-  /* =========================================
-     ADMIN DASHBOARD
-  ========================================= */
+  // =========================================================
+  // DASHBOARD
+  // =========================================================
 
   {
     path: "/admin/dashboard",
@@ -71,10 +66,61 @@ export const adminRoutes = [
     ),
   },
 
+  // =========================================================
+  // PRODUCTS
+  // =========================================================
 
-  /* =========================================
-     CUSTOMER MANAGEMENT
-  ========================================= */
+  {
+    path: "/admin/products",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <ProductManagementPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/admin/products/new",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <AddProductPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/admin/products/:productId/edit",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <EditProductPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // CATEGORIES
+  // =========================================================
+
+  {
+    path: "/admin/categories",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <CategoryManagementPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // CUSTOMERS
+  // =========================================================
 
   {
     path: "/admin/customers",
@@ -87,10 +133,61 @@ export const adminRoutes = [
     ),
   },
 
+  // =========================================================
+  // ORDERS
+  // =========================================================
 
-  /* =========================================
-     ADMIN PROFILE
-  ========================================= */
+  {
+    path: "/admin/orders",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <AdminOrderManagementPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/admin/orders/:orderId",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <AdminOrderDetailsPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // INVENTORY
+  // =========================================================
+
+  {
+    path: "/admin/inventory",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <InventoryManagementPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/admin/inventory/:productId",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <InventoryDetailsPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // ADMIN PROFILE
+  // =========================================================
 
   {
     path: "/admin/profile",
@@ -103,11 +200,6 @@ export const adminRoutes = [
     ),
   },
 
-
-  /* =========================================
-     EDIT ADMIN PROFILE
-  ========================================= */
-
   {
     path: "/admin/profile/edit",
     element: (
@@ -118,5 +210,4 @@ export const adminRoutes = [
       </AdminProtectedRoute>
     ),
   },
-
 ];

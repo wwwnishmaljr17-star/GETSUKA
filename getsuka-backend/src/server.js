@@ -2,13 +2,31 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
-import authRoutes from "./routes/authRoutes.js";
-import adminAuthRoutes from "./routes/adminAuthRoutes.js";
-import adminUserRoutes from "./routes/adminUserRoutes.js";
-import adminProfileRoutes from "./routes/adminProfileRoutes.js";
-import adminPasswordRoutes from "./routes/adminPasswordRoutes.js";
-import userProfileRoutes from "./routes/userProfileRoutes.js";
-import addressRoutes from "./routes/addressRoutes.js";
+import authRoutes from "./features/auth/routes/authRoutes.js";
+
+import adminAuthRoutes from "./features/admin/routes/adminAuthRoutes.js";
+import adminUserRoutes from "./features/admin/routes/adminUserRoutes.js";
+import adminProfileRoutes from "./features/admin/routes/adminProfileRoutes.js";
+import adminPasswordRoutes from "./features/admin/routes/adminPasswordRoutes.js";
+
+import userProfileRoutes from "./features/profile/routes/userProfileRoutes.js";
+import addressRoutes from "./features/address/routes/addressRoutes.js";
+
+import categoryRoutes from "./features/category/routes/categoryRoutes.js";
+import productRoutes from "./features/product/routes/productRoutes.js";
+
+import Category from "./features/category/models/Category.js";
+
+import reviewRoutes from "./features/review/routes/reviewRoutes.js";
+
+import wishlistRoutes from "./features/wishlist/routes/wishlistRoutes.js";
+
+import orderRoutes from "./features/order/routes/orderRoutes.js";
+import adminOrderRoutes from "./features/order/routes/adminOrderRoutes.js";
+
+import connectDB from "./config/db.js";
+
+import publicProductRoutes from "./features/product/routes/publicProductRoutes.js";
 
 dotenv.config();
 
@@ -16,106 +34,201 @@ const app = express();
 
 const PORT = process.env.PORT || 3001;
 
-// ============================================
-// CONNECT TO MONGODB
-// ============================================
-
-import connectDB from "./config/db.js";
-
 connectDB();
 
-// ============================================
-// MIDDLEWARE
-// ============================================
-
-app.use(cors());
-
-app.use(express.json());
-
-// ============================================
-// ADMIN PASSWORD ROUTES
-// ============================================
+// =========================================================
+// CORS
+// =========================================================
 
 app.use(
-  "/api/admin",
-  adminPasswordRoutes
+  cors({
+    origin: true,
+    credentials: true,
+  })
 );
 
-// ============================================
-// USER AUTHENTICATION ROUTES
-// ============================================
+// =========================================================
+// BODY PARSER
+// =========================================================
+
+app.use(
+  express.json({
+    limit: "15mb",
+  })
+);
+
+// =========================================================
+// AUTH ROUTES
+// =========================================================
 
 app.use(
   "/api/auth",
   authRoutes
 );
 
-// ============================================
-// ADMIN AUTHENTICATION ROUTES
-// ============================================
+// =========================================================
+// ADMIN ROUTES
+// =========================================================
 
 app.use(
   "/api/admin/auth",
   adminAuthRoutes
 );
 
-// ============================================
-// ADMIN CUSTOMER MANAGEMENT ROUTES
-// ============================================
+app.use(
+  "/api/admin",
+  adminPasswordRoutes
+);
 
 app.use(
   "/api/admin",
   adminUserRoutes
 );
 
-// ============================================
-// ADMIN PROFILE ROUTES
-// ============================================
-
 app.use(
   "/api/admin",
   adminProfileRoutes
 );
 
-// ============================================
+app.use(
+  "/api/admin",
+  categoryRoutes
+);
+
+app.use(
+  "/api/admin",
+  productRoutes
+);
+
+// =========================================================
+// ADMIN ORDER ROUTES
+// =========================================================
+
+app.use(
+  "/api/admin/orders",
+  adminOrderRoutes
+);
+
+// =========================================================
+// PUBLIC PRODUCT ROUTES
+// =========================================================
+
+app.use(
+  "/api",
+  publicProductRoutes
+);
+
+// =========================================================
 // USER PROFILE ROUTES
-// ============================================
+// =========================================================
 
 app.use(
   "/api/user",
   userProfileRoutes
 );
 
-// ============================================
-// USER ADDRESS ROUTES
-// ============================================
+// =========================================================
+// ADDRESS ROUTES
+// =========================================================
 
 app.use(
   "/api/user",
   addressRoutes
 );
 
-// ============================================
+// =========================================================
+// REVIEW ROUTES
+// =========================================================
+
+app.use(
+  "/api",
+  reviewRoutes
+);
+
+// =========================================================
+// WISHLIST ROUTES
+// =========================================================
+
+app.use(
+  "/api/user",
+  wishlistRoutes
+);
+
+// =========================================================
+// ORDER ROUTES
+// =========================================================
+
+app.use(
+  "/api/user/orders",
+  orderRoutes
+);
+
+// =========================================================
 // HEALTH CHECK
-// ============================================
+// =========================================================
 
 app.get(
   "/health",
   (req, res) => {
     res.status(200).json({
       success: true,
-      message:
-        "GETSUKA backend is running",
+      message: "GETSUKA backend is running",
     });
   }
 );
 
-// ============================================
-// START SERVER
-// ============================================
+// =========================================================
+// CREATE DEFAULT CATEGORY
+// =========================================================
 
-app.listen(PORT, () => {
-  console.log(
-    `GETSUKA backend running on port ${PORT}`
-  );
-});
+const createDefaultCategory = async () => {
+  try {
+    const existingCategory =
+      await Category.findOne({
+        name: "T-Shirts",
+      });
+
+    if (!existingCategory) {
+      await Category.create({
+        name: "T-Shirts",
+        isDeleted: false,
+      });
+
+      console.log(
+        'Default category "T-Shirts" created successfully'
+      );
+    } else if (existingCategory.isDeleted) {
+      existingCategory.isDeleted = false;
+
+      await existingCategory.save();
+
+      console.log(
+        'Default category "T-Shirts" restored successfully'
+      );
+    } else {
+      console.log(
+        'Default category "T-Shirts" already exists'
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Default category creation failed:",
+      error.message
+    );
+  }
+};
+
+// =========================================================
+// START SERVER
+// =========================================================
+
+app.listen(
+  PORT,
+  async () => {
+    console.log(
+      `GETSUKA backend running on port ${PORT}`
+    );
+
+    await createDefaultCategory();
+  }
+);

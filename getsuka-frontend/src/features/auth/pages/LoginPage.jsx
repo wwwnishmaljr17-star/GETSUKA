@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import LoginForm from "../components/LoginForm";
 import { useNavigate } from "react-router-dom";
 
-import loginArt from "../../../assets/auth/login.jpg";
+import loginArt from "../../../assets/auth/HERO.jpg";
 import getsukaLogo from "../../../assets/auth/getsuka_logo.png";
 
 const LoginPage = () => {

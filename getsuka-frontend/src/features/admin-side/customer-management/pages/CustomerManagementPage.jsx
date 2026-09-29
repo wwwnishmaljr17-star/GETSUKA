@@ -12,8 +12,14 @@ import {
 const CustomerManagementPage = () => {
   const navigate = useNavigate();
 
+  // =========================================================
+  // STATE
+  // =========================================================
+
   const [users, setUsers] = useState([]);
+
   const [search, setSearch] = useState("");
+
   const [page, setPage] = useState(1);
 
   const [pagination, setPagination] = useState({
@@ -23,16 +29,18 @@ const CustomerManagementPage = () => {
   });
 
   const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] =
-    useState(null);
+
+  const [actionLoading, setActionLoading] = useState(null);
 
   const [error, setError] = useState("");
 
-  const [selectedUser, setSelectedUser] =
-    useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
 
-  const [viewLoading, setViewLoading] =
-    useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // =========================================================
+  // FETCH USERS
+  // =========================================================
 
   const fetchUsers = async () => {
     try {
@@ -55,18 +63,23 @@ const CustomerManagementPage = () => {
         }
       );
     } catch (error) {
-      setError(
-        error.message ||
-          "Failed to fetch customers"
-      );
+      setError(error.message || "Failed to fetch customers");
     } finally {
       setLoading(false);
     }
   };
 
+  // =========================================================
+  // INITIAL FETCH / PAGE CHANGE
+  // =========================================================
+
   useEffect(() => {
     fetchUsers();
   }, [page]);
+
+  // =========================================================
+  // SEARCH
+  // =========================================================
 
   const handleSearch = (event) => {
     event.preventDefault();
@@ -76,43 +89,44 @@ const CustomerManagementPage = () => {
     fetchUsers();
   };
 
+  // =========================================================
+  // CLEAR SEARCH
+  // =========================================================
+
   const handleClear = () => {
     setSearch("");
     setPage(1);
+
+    setTimeout(() => {
+      fetchUsers();
+    }, 0);
   };
 
-  /* =========================================
-     VIEW CUSTOMER
-  ========================================= */
+  // =========================================================
+  // VIEW CUSTOMER
+  // =========================================================
 
   const handleViewUser = async (userId) => {
     try {
       setViewLoading(true);
       setError("");
 
-      const response =
-        await getUserById(userId);
+      const response = await getUserById(userId);
 
       setSelectedUser(response.user);
-
     } catch (error) {
-      setError(
-        error.message ||
-          "Failed to fetch customer"
-      );
+      setError(error.message || "Failed to fetch customer");
     } finally {
       setViewLoading(false);
     }
   };
 
-  /* =========================================
-     BLOCK / UNBLOCK
-  ========================================= */
+  // =========================================================
+  // BLOCK / UNBLOCK CUSTOMER
+  // =========================================================
 
   const handleToggleBlock = async (user) => {
-    const action = user.isBlocked
-      ? "unblock"
-      : "block";
+    const action = user.isBlocked ? "unblock" : "block";
 
     const confirmed = window.confirm(
       `Are you sure you want to ${action} ${user.fullName}?`
@@ -134,29 +148,22 @@ const CustomerManagementPage = () => {
 
       await fetchUsers();
 
-      if (
-        selectedUser &&
-        selectedUser._id === user._id
-      ) {
+      if (selectedUser && selectedUser._id === user._id) {
         setSelectedUser({
           ...selectedUser,
           isBlocked: !user.isBlocked,
         });
       }
-
     } catch (error) {
-      setError(
-        error.message ||
-          `Failed to ${action} customer`
-      );
+      setError(error.message || `Failed to ${action} customer`);
     } finally {
       setActionLoading(null);
     }
   };
 
-  /* =========================================
-     DELETE USER
-  ========================================= */
+  // =========================================================
+  // DELETE CUSTOMER
+  // =========================================================
 
   const handleDeleteUser = async (user) => {
     const confirmed = window.confirm(
@@ -173,86 +180,211 @@ const CustomerManagementPage = () => {
 
       await deleteUser(user._id);
 
-      if (
-        selectedUser &&
-        selectedUser._id === user._id
-      ) {
+      if (selectedUser && selectedUser._id === user._id) {
         setSelectedUser(null);
       }
 
       await fetchUsers();
-
     } catch (error) {
-      setError(
-        error.message ||
-          "Failed to delete customer"
-      );
+      setError(error.message || "Failed to delete customer");
     } finally {
       setActionLoading(null);
     }
   };
 
+  // =========================================================
+  // STATS
+  // =========================================================
+
+  const activeCustomers = users.filter(
+    (user) => !user.isBlocked
+  ).length;
+
+  const blockedCustomers = users.filter(
+    (user) => user.isBlocked
+  ).length;
+
+  // =========================================================
+  // PAGE
+  // =========================================================
+
   return (
-    <div className="min-h-screen bg-[#111111] text-white">
+    <div className="min-h-full bg-white text-[#172033]">
 
-      {/* =========================================
-          HEADER
-      ========================================= */}
+      {/* =====================================================
+          PAGE HEADER
+      ===================================================== */}
 
-      <div className="border-b border-[#292929] bg-[#0d0d0d]">
+      <section className="border-b border-[#edf1f6] px-[26px] pb-[24px] pt-[25px]">
 
-        <div className="mx-auto max-w-7xl px-6 py-5">
+        {/* BREADCRUMB */}
 
-          <div className="flex items-center justify-between">
+        <div className="flex items-center gap-[8px] text-[9px]">
 
-            <div>
+          <button
+            type="button"
+            onClick={() => navigate("/admin/dashboard")}
+            className="font-medium text-[#1557f5] transition-colors duration-200 hover:text-[#0d49d8]"
+          >
+            Dashboard
+          </button>
 
-              <p className="text-[8px] tracking-[0.18em] text-gray-500">
-                GETSUKA / ADMIN TERMINAL
-              </p>
+          <span className="text-[#b5bfcc]">
+            /
+          </span>
 
-              <h1 className="mt-2 text-[20px] font-medium tracking-wide">
-                CUSTOMER MANAGEMENT
-              </h1>
+          <span className="text-[#8b97a8]">
+            Customers
+          </span>
 
-              <p className="mt-1 text-[8px] text-gray-500">
-                Manage registered GETSUKA customers
-              </p>
+        </div>
+
+        {/* TITLE */}
+
+        <div className="mt-[22px] flex flex-col gap-[15px] sm:flex-row sm:items-end sm:justify-between">
+
+          <div>
+
+            <h1 className="text-[25px] font-semibold tracking-[-0.035em] text-[#162033]">
+              Customers
+            </h1>
+
+            <p className="mt-[7px] text-[11px] text-[#8290a3]">
+              Manage registered GETSUKA customers.
+            </p>
+
+          </div>
+
+          <div className="rounded-full bg-[#f1f6ff] px-[13px] py-[7px] text-[9px] font-medium text-[#1557f5]">
+            {pagination.totalUsers} customers
+          </div>
+
+        </div>
+
+      </section>
+
+      {/* =====================================================
+          MAIN CONTENT
+      ===================================================== */}
+
+      <main className="px-[26px] py-[22px]">
+
+        {/* ===================================================
+            STAT CARDS
+        =================================================== */}
+
+        <div className="grid grid-cols-1 gap-[12px] sm:grid-cols-3">
+
+          {/* TOTAL */}
+
+          <div className="group rounded-[12px] border border-[#e1e8f1] bg-white px-[17px] py-[16px] shadow-[0_4px_18px_rgba(30,64,175,0.04)] transition-all duration-200 hover:-translate-y-[1px] hover:border-[#c8d8f4] hover:shadow-[0_8px_25px_rgba(30,64,175,0.08)]">
+
+            <div className="flex items-center justify-between">
+
+              <div className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[#edf4ff] text-[15px] text-[#1557f5] transition-colors duration-200 group-hover:bg-[#1557f5] group-hover:text-white">
+                ◎
+              </div>
+
+              <span className="text-[18px] text-[#d8e2f0] transition-colors duration-200 group-hover:text-[#b8cbed]">
+                +
+              </span>
 
             </div>
 
-            <button
-              onClick={() =>
-                navigate("/admin/dashboard")
-              }
-              className="border border-[#363636] px-4 py-2 text-[7px] tracking-[0.12em] text-gray-400 hover:border-gray-500 hover:text-white transition"
-            >
-              ← DASHBOARD
-            </button>
+            <p className="mt-[13px] text-[8px] font-medium uppercase tracking-[0.12em] text-[#7e8da1]">
+              Total Customers
+            </p>
+
+            <p className="mt-[5px] text-[23px] font-semibold text-[#1b273b]">
+              {pagination.totalUsers}
+            </p>
+
+            <p className="mt-[4px] text-[8px] text-[#9aa6b6]">
+              Registered accounts
+            </p>
+
+          </div>
+
+          {/* ACTIVE */}
+
+          <div className="group rounded-[12px] border border-[#e1e8f1] bg-white px-[17px] py-[16px] shadow-[0_4px_18px_rgba(30,64,175,0.04)] transition-all duration-200 hover:-translate-y-[1px] hover:border-[#bcebd5] hover:shadow-[0_8px_25px_rgba(30,64,175,0.08)]">
+
+            <div className="flex items-center justify-between">
+
+              <div className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[#effcf6] text-[15px] text-[#12a66d] transition-colors duration-200 group-hover:bg-[#12a66d] group-hover:text-white">
+                ✓
+              </div>
+
+              <span className="text-[18px] text-[#d8eee5] transition-colors duration-200 group-hover:text-[#a9dec9]">
+                ↗
+              </span>
+
+            </div>
+
+            <p className="mt-[13px] text-[8px] font-medium uppercase tracking-[0.12em] text-[#7e8da1]">
+              Active
+            </p>
+
+            <p className="mt-[5px] text-[23px] font-semibold text-[#1b273b]">
+              {activeCustomers}
+            </p>
+
+            <p className="mt-[4px] text-[8px] text-[#12a66d]">
+              Currently active
+            </p>
+
+          </div>
+
+          {/* BLOCKED */}
+
+          <div className="group rounded-[12px] border border-[#e1e8f1] bg-white px-[17px] py-[16px] shadow-[0_4px_18px_rgba(30,64,175,0.04)] transition-all duration-200 hover:-translate-y-[1px] hover:border-[#ffd0d8] hover:shadow-[0_8px_25px_rgba(30,64,175,0.08)]">
+
+            <div className="flex items-center justify-between">
+
+              <div className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[#fff2f4] text-[15px] text-[#df3d56] transition-colors duration-200 group-hover:bg-[#df3d56] group-hover:text-white">
+                !
+              </div>
+
+              <span className="text-[18px] text-[#f3d9de] transition-colors duration-200 group-hover:text-[#e9b5bf]">
+                ↘
+              </span>
+
+            </div>
+
+            <p className="mt-[13px] text-[8px] font-medium uppercase tracking-[0.12em] text-[#7e8da1]">
+              Blocked
+            </p>
+
+            <p className="mt-[5px] text-[23px] font-semibold text-[#1b273b]">
+              {blockedCustomers}
+            </p>
+
+            <p className="mt-[4px] text-[8px] text-[#df3d56]">
+              Restricted accounts
+            </p>
 
           </div>
 
         </div>
 
-      </div>
+        {/* ===================================================
+            SEARCH PANEL
+        =================================================== */}
 
-
-      {/* =========================================
-          CONTENT
-      ========================================= */}
-
-      <div className="mx-auto max-w-7xl px-6 py-6">
-
-        {/* SEARCH */}
-
-        <div className="border border-[#292929] bg-[#141414] p-4">
+        <section className="mt-[14px] rounded-[12px] border border-[#e1e8f1] bg-white p-[15px] shadow-[0_4px_18px_rgba(30,64,175,0.04)]">
 
           <form
             onSubmit={handleSearch}
-            className="flex gap-3"
+            className="flex flex-col gap-[9px] xl:flex-row"
           >
 
-            <div className="flex-1">
+            {/* SEARCH */}
+
+            <div className="relative flex-1">
+
+              <span className="pointer-events-none absolute left-[13px] top-1/2 -translate-y-1/2 text-[13px] text-[#9aa6b6]">
+                ⌕
+              </span>
 
               <input
                 type="text"
@@ -260,102 +392,124 @@ const CustomerManagementPage = () => {
                 onChange={(event) =>
                   setSearch(event.target.value)
                 }
-                placeholder="SEARCH BY NAME OR EMAIL..."
-                className="w-full h-9 border-b border-[#3a3a3a] bg-transparent px-2 text-[8px] tracking-wide text-white placeholder:text-gray-600 outline-none focus:border-gray-300 transition"
+                placeholder="Search customers by name or email..."
+                className="h-[45px] w-full rounded-[8px] border border-[#dfe6ef] bg-[#f9fbfe] pl-[36px] pr-[12px] text-[10px] text-[#263247] outline-none transition-all duration-200 placeholder:text-[#aab4c2] hover:border-[#c4d2e5] focus:border-[#6f9cf7] focus:bg-white focus:ring-[3px] focus:ring-[#1557f5]/5"
               />
 
             </div>
 
+            {/* SEARCH BUTTON */}
+
             <button
               type="submit"
-              className="h-9 bg-[#e9002d] px-6 text-[7px] tracking-[0.12em] font-medium hover:bg-[#ff1744] transition"
+              className="h-[45px] rounded-[8px] bg-[#1557f5] px-[23px] text-[8px] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_5px_14px_rgba(21,87,245,0.14)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0d49d8] hover:shadow-[0_7px_18px_rgba(21,87,245,0.20)] active:translate-y-0"
             >
-              SEARCH
+              Search
             </button>
+
+            {/* CLEAR */}
 
             <button
               type="button"
               onClick={handleClear}
-              className="h-9 border border-[#3a3a3a] px-5 text-[7px] tracking-[0.12em] text-gray-400 hover:text-white hover:border-gray-500 transition"
+              className="h-[45px] rounded-[8px] border border-[#dfe6ef] bg-white px-[20px] text-[8px] font-medium uppercase tracking-[0.08em] text-[#7a8799] transition-all duration-200 hover:border-[#b8c8dd] hover:bg-[#f5f8ff] hover:text-[#1557f5] active:bg-[#edf4ff]"
             >
-              CLEAR
+              ↻ &nbsp; Clear
             </button>
 
           </form>
 
-        </div>
+        </section>
 
-
-        {/* ERROR */}
+        {/* ===================================================
+            ERROR
+        =================================================== */}
 
         {error && (
-          <div className="mt-4 border border-red-900 bg-[#1b1111] px-4 py-3 text-[8px] text-red-400">
-            {error}
+          <div className="mt-[12px] rounded-[8px] border border-[#ffd1d8] bg-[#fff5f6] px-[15px] py-[11px]">
+
+            <p className="text-[9px] text-[#d93650]">
+              ! &nbsp; {error}
+            </p>
+
           </div>
         )}
 
-
-        {/* =========================================
+        {/* ===================================================
             CUSTOMER TABLE
-        ========================================= */}
+        =================================================== */}
 
-        <div className="mt-5 overflow-hidden border border-[#292929] bg-[#141414]">
+        <section className="mt-[14px] overflow-hidden rounded-[12px] border border-[#e1e8f1] bg-white shadow-[0_4px_18px_rgba(30,64,175,0.04)]">
 
-          <div className="flex items-center justify-between border-b border-[#292929] px-4 py-3">
+          {/* TABLE HEADER */}
+
+          <div className="flex flex-col gap-[10px] border-b border-[#edf1f6] px-[18px] py-[15px] sm:flex-row sm:items-center sm:justify-between">
 
             <div>
 
-              <p className="text-[8px] tracking-[0.12em] text-gray-300">
-                CUSTOMERS
+              <p className="text-[12px] font-semibold text-[#1c2940]">
+                Customer Directory
               </p>
 
-              <p className="mt-1 text-[6px] text-gray-600">
-                {pagination.totalUsers} REGISTERED USERS
+              <p className="mt-[4px] text-[8px] uppercase tracking-[0.08em] text-[#8b97a8]">
+                {pagination.totalUsers} registered users
               </p>
+
+            </div>
+
+            <div className="flex items-center gap-[7px]">
+
+              <span className="h-[6px] w-[6px] rounded-full bg-[#12a66d]" />
+
+              <span className="text-[7px] uppercase tracking-[0.1em] text-[#8996a8]">
+                Live Customer Data
+              </span>
 
             </div>
 
           </div>
 
+          {/* TABLE */}
 
           <div className="overflow-x-auto">
 
-            <table className="w-full min-w-[850px]">
+            <table className="w-full min-w-[900px]">
 
               <thead>
 
-                <tr className="border-b border-[#292929] text-left">
+                <tr className="border-b border-[#edf1f6] bg-[#f8faff]">
 
-                  <th className="px-4 py-3 text-[6px] tracking-[0.12em] text-gray-600">
-                    CUSTOMER
+                  <th className="px-[18px] py-[13px] text-left text-[7px] uppercase tracking-[0.12em] text-[#7c899b]">
+                    Customer
                   </th>
 
-                  <th className="px-4 py-3 text-[6px] tracking-[0.12em] text-gray-600">
-                    EMAIL
+                  <th className="px-[18px] py-[13px] text-left text-[7px] uppercase tracking-[0.12em] text-[#7c899b]">
+                    Email
                   </th>
 
-                  <th className="px-4 py-3 text-[6px] tracking-[0.12em] text-gray-600">
-                    PHONE
+                  <th className="px-[18px] py-[13px] text-left text-[7px] uppercase tracking-[0.12em] text-[#7c899b]">
+                    Phone
                   </th>
 
-                  <th className="px-4 py-3 text-[6px] tracking-[0.12em] text-gray-600">
-                    STATUS
+                  <th className="px-[18px] py-[13px] text-left text-[7px] uppercase tracking-[0.12em] text-[#7c899b]">
+                    Status
                   </th>
 
-                  <th className="px-4 py-3 text-[6px] tracking-[0.12em] text-gray-600">
-                    JOINED
+                  <th className="px-[18px] py-[13px] text-left text-[7px] uppercase tracking-[0.12em] text-[#7c899b]">
+                    Joined
                   </th>
 
-                  <th className="px-4 py-3 text-right text-[6px] tracking-[0.12em] text-gray-600">
-                    ACTIONS
+                  <th className="px-[18px] py-[13px] text-right text-[7px] uppercase tracking-[0.12em] text-[#7c899b]">
+                    Actions
                   </th>
 
                 </tr>
 
               </thead>
 
-
               <tbody>
+
+                {/* LOADING */}
 
                 {loading ? (
 
@@ -363,9 +517,19 @@ const CustomerManagementPage = () => {
 
                     <td
                       colSpan="6"
-                      className="px-4 py-12 text-center text-[8px] text-gray-500"
+                      className="px-[18px] py-[65px] text-center"
                     >
-                      LOADING CUSTOMERS...
+
+                      <div className="flex flex-col items-center">
+
+                        <div className="h-[25px] w-[25px] animate-spin rounded-full border-2 border-[#dce5f2] border-t-[#1557f5]" />
+
+                        <p className="mt-[12px] text-[8px] uppercase tracking-[0.12em] text-[#8996a8]">
+                          Loading Customers...
+                        </p>
+
+                      </div>
+
                     </td>
 
                   </tr>
@@ -376,9 +540,21 @@ const CustomerManagementPage = () => {
 
                     <td
                       colSpan="6"
-                      className="px-4 py-12 text-center text-[8px] text-gray-500"
+                      className="px-[18px] py-[70px] text-center"
                     >
-                      NO CUSTOMERS FOUND
+
+                      <div className="mx-auto flex h-[50px] w-[50px] items-center justify-center rounded-full bg-[#f1f6ff] text-[19px] text-[#8da9dc]">
+                        ◎
+                      </div>
+
+                      <p className="mt-[13px] text-[9px] font-medium uppercase tracking-[0.1em] text-[#69788b]">
+                        No Customers Found
+                      </p>
+
+                      <p className="mt-[5px] text-[8px] text-[#9aa6b6]">
+                        Try changing your search.
+                      </p>
+
                     </td>
 
                   </tr>
@@ -389,133 +565,159 @@ const CustomerManagementPage = () => {
 
                     <tr
                       key={user._id}
-                      className="border-b border-[#292929] hover:bg-[#191919] transition"
+                      className="group border-b border-[#edf1f6] bg-white transition-all duration-200 hover:bg-[#eaf3ff] hover:shadow-[inset_3px_0_0_#1557f5]"
                     >
 
                       {/* CUSTOMER */}
 
-                      <td className="px-4 py-4">
+                      <td className="px-[18px] py-[15px]">
 
-                        <p className="text-[8px] text-white">
-                          {user.fullName}
-                        </p>
+                        <div className="flex items-center gap-[11px]">
 
-                        <p className="mt-1 text-[6px] text-gray-600">
-                          ID: {user._id.slice(-8)}
-                        </p>
+                          <div className="flex h-[35px] w-[35px] shrink-0 items-center justify-center rounded-full border border-[#dce6f3] bg-[#f1f6ff] text-[10px] font-medium text-[#1557f5] transition-all duration-200 group-hover:border-[#b8cff5] group-hover:bg-[#dceaff] group-hover:text-[#0d49d8]">
+
+                            {(
+                              user.fullName || "U"
+                            )
+                              .charAt(0)
+                              .toUpperCase()}
+
+                          </div>
+
+                          <div>
+
+                            <p className="text-[9px] font-semibold text-[#263247] transition-colors duration-200 group-hover:text-[#1557f5]">
+                              {user.fullName}
+                            </p>
+
+                            <p className="mt-[4px] text-[7px] text-[#9aa6b6]">
+                              ID:{" "}
+                              {user._id.slice(-8)}
+                            </p>
+
+                          </div>
+
+                        </div>
 
                       </td>
-
 
                       {/* EMAIL */}
 
-                      <td className="px-4 py-4 text-[7px] text-gray-400">
-                        {user.email}
-                      </td>
+                      <td className="px-[18px] py-[15px]">
 
+                        <p className="text-[8px] text-[#6f7d90] transition-colors duration-200 group-hover:text-[#50698c]">
+                          {user.email}
+                        </p>
+
+                      </td>
 
                       {/* PHONE */}
 
-                      <td className="px-4 py-4 text-[7px] text-gray-400">
-                        {user.phone || "—"}
-                      </td>
+                      <td className="px-[18px] py-[15px]">
 
+                        <p className="text-[8px] text-[#7c899b] transition-colors duration-200 group-hover:text-[#50698c]">
+                          {user.phone || "—"}
+                        </p>
+
+                      </td>
 
                       {/* STATUS */}
 
-                      <td className="px-4 py-4">
+                      <td className="px-[18px] py-[15px]">
 
-                        <span
-                          className={
-                            user.isBlocked
-                              ? "border border-red-900 bg-[#241313] px-2 py-1 text-[6px] tracking-wide text-red-400"
-                              : "border border-green-900 bg-[#132018] px-2 py-1 text-[6px] tracking-wide text-green-400"
-                          }
-                        >
-                          {user.isBlocked
-                            ? "BLOCKED"
-                            : "ACTIVE"}
-                        </span>
+                        {user.isBlocked ? (
+
+                          <span className="inline-flex items-center gap-[5px] rounded-full border border-[#ffd0d8] bg-[#fff3f5] px-[8px] py-[5px] text-[6px] uppercase tracking-[0.08em] text-[#d93650]">
+                            <span className="h-[5px] w-[5px] rounded-full bg-[#df3d56]" />
+                            BLOCKED
+                          </span>
+
+                        ) : (
+
+                          <span className="inline-flex items-center gap-[5px] rounded-full border border-[#bcebd5] bg-[#effcf6] px-[8px] py-[5px] text-[6px] uppercase tracking-[0.08em] text-[#11845b]">
+                            <span className="h-[5px] w-[5px] rounded-full bg-[#12a66d]" />
+                            ACTIVE
+                          </span>
+
+                        )}
 
                       </td>
-
 
                       {/* JOINED */}
 
-                      <td className="px-4 py-4 text-[7px] text-gray-500">
+                      <td className="px-[18px] py-[15px]">
 
-                        {user.createdAt
-                          ? new Date(
-                              user.createdAt
-                            ).toLocaleDateString()
-                          : "—"}
+                        <p className="text-[8px] text-[#7c899b] transition-colors duration-200 group-hover:text-[#50698c]">
+
+                          {user.createdAt
+                            ? new Date(
+                                user.createdAt
+                              ).toLocaleDateString(
+                                "en-GB",
+                                {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                }
+                              )
+                            : "—"}
+
+                        </p>
 
                       </td>
 
-
                       {/* ACTIONS */}
 
-                      <td className="px-4 py-4">
+                      <td className="px-[18px] py-[15px]">
 
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-[6px]">
 
                           {/* VIEW */}
 
                           <button
                             type="button"
                             onClick={() =>
-                              handleViewUser(
-                                user._id
-                              )
+                              handleViewUser(user._id)
                             }
-                            className="border border-[#3a3a3a] px-3 py-2 text-[6px] tracking-wide text-gray-300 hover:border-gray-500 hover:text-white transition"
+                            className="h-[31px] rounded-[7px] border border-[#dce4ee] bg-white px-[11px] text-[6px] font-medium uppercase tracking-[0.08em] text-[#718096] transition-all duration-200 hover:border-[#9eb9eb] hover:bg-[#f3f7ff] hover:text-[#1557f5] active:bg-[#eaf2ff]"
                           >
                             VIEW
                           </button>
-
 
                           {/* BLOCK / UNBLOCK */}
 
                           <button
                             type="button"
                             disabled={
-                              actionLoading ===
-                              user._id
+                              actionLoading === user._id
                             }
                             onClick={() =>
-                              handleToggleBlock(
-                                user
-                              )
+                              handleToggleBlock(user)
                             }
                             className={
                               user.isBlocked
-                                ? "border border-green-900 px-3 py-2 text-[6px] tracking-wide text-green-400 hover:bg-[#132018] transition disabled:opacity-40"
-                                : "border border-yellow-900 px-3 py-2 text-[6px] tracking-wide text-yellow-500 hover:bg-[#211d12] transition disabled:opacity-40"
+                                ? "h-[31px] rounded-[7px] border border-[#bcebd5] bg-[#effcf6] px-[11px] text-[6px] font-medium uppercase tracking-[0.08em] text-[#11845b] transition-all duration-200 hover:border-[#83d9b6] hover:bg-[#e0faef] hover:text-[#08764f] disabled:cursor-not-allowed disabled:opacity-40"
+                                : "h-[31px] rounded-[7px] border border-[#ffe0a5] bg-[#fffaf0] px-[11px] text-[6px] font-medium uppercase tracking-[0.08em] text-[#a36b00] transition-all duration-200 hover:border-[#f2c96d] hover:bg-[#fff5dc] hover:text-[#875700] disabled:cursor-not-allowed disabled:opacity-40"
                             }
                           >
-                            {actionLoading ===
-                            user._id
+                            {actionLoading === user._id
                               ? "..."
                               : user.isBlocked
                               ? "UNBLOCK"
                               : "BLOCK"}
                           </button>
 
-
                           {/* DELETE */}
 
                           <button
                             type="button"
                             disabled={
-                              actionLoading ===
-                              user._id
+                              actionLoading === user._id
                             }
                             onClick={() =>
-                              handleDeleteUser(
-                                user
-                              )
+                              handleDeleteUser(user)
                             }
-                            className="border border-red-900 px-3 py-2 text-[6px] tracking-wide text-red-400 hover:bg-[#241313] transition disabled:opacity-40"
+                            className="h-[31px] rounded-[7px] border border-[#ffd0d8] bg-[#fff5f6] px-[11px] text-[6px] font-medium uppercase tracking-[0.08em] text-[#d93650] transition-all duration-200 hover:border-[#ffabb9] hover:bg-[#ffe9ed] hover:text-[#c52d47] active:bg-[#ffe0e5] disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             DELETE
                           </button>
@@ -536,84 +738,116 @@ const CustomerManagementPage = () => {
 
           </div>
 
-
-          {/* =========================================
+          {/* =================================================
               PAGINATION
-          ========================================= */}
+          ================================================= */}
 
-          <div className="flex items-center justify-between border-t border-[#292929] px-4 py-4">
+          <div className="flex flex-col gap-[12px] border-t border-[#edf1f6] px-[18px] py-[15px] sm:flex-row sm:items-center sm:justify-between">
 
-            <p className="text-[7px] text-gray-500">
-              TOTAL USERS:{" "}
-              <span className="text-gray-300">
+            <p className="text-[8px] text-[#8996a8]">
+
+              Showing{" "}
+
+              <span className="font-medium text-[#4c5b70]">
+                {users.length}
+              </span>{" "}
+
+              customers of{" "}
+
+              <span className="font-medium text-[#4c5b70]">
                 {pagination.totalUsers}
               </span>
+
             </p>
 
+            <div className="flex items-center gap-[5px]">
 
-            <div className="flex items-center gap-3">
+              {/* PREVIOUS */}
 
               <button
                 disabled={page <= 1}
                 onClick={() =>
                   setPage(page - 1)
                 }
-                className="border border-[#363636] px-4 py-2 text-[6px] tracking-wide text-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                className="flex h-[32px] min-w-[32px] items-center justify-center rounded-[7px] border border-[#dce4ee] bg-white text-[11px] text-[#71808c] transition-all duration-200 hover:border-[#9eb9eb] hover:bg-[#f3f7ff] hover:text-[#1557f5] disabled:cursor-not-allowed disabled:opacity-30"
               >
-                ← PREVIOUS
+                ‹
               </button>
 
-              <span className="text-[7px] text-gray-400">
-                {pagination.currentPage} /{" "}
-                {pagination.totalPages}
-              </span>
+              {/* PAGE */}
+
+              <div className="flex h-[32px] min-w-[32px] items-center justify-center rounded-[7px] bg-[#1557f5] px-[9px] text-[8px] font-medium text-white shadow-[0_4px_12px_rgba(21,87,245,0.18)]">
+                {pagination.currentPage}
+              </div>
+
+              {/* NEXT */}
 
               <button
                 disabled={
-                  page >=
-                  pagination.totalPages
+                  page >= pagination.totalPages
                 }
                 onClick={() =>
                   setPage(page + 1)
                 }
-                className="border border-[#363636] px-4 py-2 text-[6px] tracking-wide text-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                className="flex h-[32px] min-w-[32px] items-center justify-center rounded-[7px] border border-[#dce4ee] bg-white text-[11px] text-[#71808c] transition-all duration-200 hover:border-[#9eb9eb] hover:bg-[#f3f7ff] hover:text-[#1557f5] disabled:cursor-not-allowed disabled:opacity-30"
               >
-                NEXT →
+                ›
               </button>
 
             </div>
 
           </div>
 
-        </div>
+        </section>
 
-      </div>
+        {/* ===================================================
+            FOOTER
+        =================================================== */}
 
+        <footer className="mt-[28px] flex items-center justify-between border-t border-[#e7edf5] px-[5px] py-[18px]">
 
-      {/* =========================================
+          <div>
+
+            <p className="text-[11px] font-semibold text-[#1557f5]">
+              GETSUKA
+            </p>
+
+            <p className="mt-[3px] text-[7px] text-[#8c98a9]">
+              Admin Panel
+            </p>
+
+          </div>
+
+          <p className="text-[8px] text-[#8c98a9]">
+            GETSUKA Administration
+          </p>
+
+        </footer>
+
+      </main>
+
+      {/* =====================================================
           VIEW CUSTOMER MODAL
-      ========================================= */}
+      ===================================================== */}
 
       {(selectedUser || viewLoading) && (
 
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#102047]/35 px-4 backdrop-blur-[4px]">
 
-          <div className="w-full max-w-[420px] border border-[#363636] bg-[#141414] shadow-2xl">
+          <div className="w-full max-w-[460px] overflow-hidden rounded-[14px] border border-[#dce5f0] bg-white shadow-[0_30px_100px_rgba(30,64,175,0.20)]">
 
             {/* MODAL HEADER */}
 
-            <div className="flex items-center justify-between border-b border-[#292929] px-5 py-4">
+            <div className="flex items-center justify-between border-b border-[#edf1f6] px-[20px] py-[18px]">
 
               <div>
 
-                <p className="text-[7px] tracking-[0.14em] text-gray-500">
-                  CUSTOMER PROFILE
+                <p className="text-[7px] font-semibold uppercase tracking-[0.16em] text-[#1557f5]">
+                  GETSUKA / CUSTOMERS
                 </p>
 
-                <h2 className="mt-1 text-[13px]">
-                  {viewLoading
-                    ? "LOADING..."
-                    : selectedUser?.fullName}
+                <h2 className="mt-[6px] text-[15px] font-semibold text-[#1b273b]">
+                  Customer Profile
                 </h2>
 
               </div>
@@ -623,34 +857,91 @@ const CustomerManagementPage = () => {
                 onClick={() =>
                   setSelectedUser(null)
                 }
-                className="text-[14px] text-gray-500 hover:text-white"
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#f4f7fb] text-[18px] text-[#7d899a] transition-all duration-200 hover:bg-[#e8eef7] hover:text-[#1557f5]"
               >
                 ×
               </button>
 
             </div>
 
+            {/* LOADING */}
 
-            {/* MODAL BODY */}
+            {viewLoading && !selectedUser && (
+
+              <div className="flex flex-col items-center justify-center px-[20px] py-[60px]">
+
+                <div className="h-[27px] w-[27px] animate-spin rounded-full border-2 border-[#dce5f2] border-t-[#1557f5]" />
+
+                <p className="mt-[13px] text-[8px] uppercase tracking-[0.14em] text-[#8996a8]">
+                  Loading Customer...
+                </p>
+
+              </div>
+
+            )}
+
+            {/* CUSTOMER */}
 
             {selectedUser && (
 
-              <div className="px-5 py-5">
+              <div className="px-[20px] py-[20px]">
 
-                <div className="space-y-4">
+                {/* PROFILE HEADER */}
+
+                <div className="flex items-center gap-[13px] rounded-[9px] border border-[#e1e8f1] bg-[#f8faff] p-[15px]">
+
+                  <div className="flex h-[48px] w-[48px] items-center justify-center rounded-full border border-[#cfe0fb] bg-[#edf4ff]">
+
+                    <span className="text-[17px] font-semibold text-[#1557f5]">
+                      {(
+                        selectedUser.fullName || "U"
+                      )
+                        .charAt(0)
+                        .toUpperCase()}
+                    </span>
+
+                  </div>
+
+                  <div className="flex-1">
+
+                    <p className="text-[10px] font-semibold text-[#263247]">
+                      {selectedUser.fullName}
+                    </p>
+
+                    <p className="mt-[4px] text-[8px] text-[#8996a8]">
+                      {selectedUser.email}
+                    </p>
+
+                  </div>
+
+                  {selectedUser.isBlocked ? (
+
+                    <span className="rounded-full border border-[#ffd0d8] bg-[#fff3f5] px-[8px] py-[4px] text-[6px] uppercase tracking-[0.08em] text-[#d93650]">
+                      BLOCKED
+                    </span>
+
+                  ) : (
+
+                    <span className="rounded-full border border-[#bcebd5] bg-[#effcf6] px-[8px] py-[4px] text-[6px] uppercase tracking-[0.08em] text-[#11845b]">
+                      ACTIVE
+                    </span>
+
+                  )}
+
+                </div>
+
+                {/* DETAILS */}
+
+                <div className="mt-[18px] space-y-[12px]">
 
                   <CustomerDetail
                     label="FULL NAME"
-                    value={
-                      selectedUser.fullName
-                    }
+                    value={selectedUser.fullName}
                   />
 
                   <CustomerDetail
                     label="EMAIL"
-                    value={
-                      selectedUser.email
-                    }
+                    value={selectedUser.email}
                   />
 
                   <CustomerDetail
@@ -662,12 +953,17 @@ const CustomerManagementPage = () => {
                   />
 
                   <CustomerDetail
-                    label="STATUS"
+                    label="ACCOUNT STATUS"
                     value={
                       selectedUser.isBlocked
                         ? "BLOCKED"
                         : "ACTIVE"
                     }
+                  />
+
+                  <CustomerDetail
+                    label="CUSTOMER ID"
+                    value={selectedUser._id}
                   />
 
                   <CustomerDetail
@@ -683,10 +979,9 @@ const CustomerManagementPage = () => {
 
                 </div>
 
-
                 {/* MODAL ACTIONS */}
 
-                <div className="mt-6 flex gap-2">
+                <div className="mt-[20px] grid grid-cols-2 gap-[8px]">
 
                   <button
                     type="button"
@@ -699,9 +994,16 @@ const CustomerManagementPage = () => {
                         selectedUser
                       )
                     }
-                    className="flex-1 border border-[#3a3a3a] py-3 text-[6px] tracking-[0.12em] text-gray-300 hover:border-gray-500 hover:text-white transition disabled:opacity-40"
+                    className={
+                      selectedUser.isBlocked
+                        ? "h-[40px] rounded-[8px] border border-[#bcebd5] bg-[#effcf6] text-[7px] font-medium uppercase tracking-[0.08em] text-[#11845b] transition-all duration-200 hover:border-[#83d9b6] hover:bg-[#e0faef] hover:text-[#08764f] disabled:cursor-not-allowed disabled:opacity-40"
+                        : "h-[40px] rounded-[8px] border border-[#ffe0a5] bg-[#fffaf0] text-[7px] font-medium uppercase tracking-[0.08em] text-[#a36b00] transition-all duration-200 hover:border-[#f2c96d] hover:bg-[#fff5dc] hover:text-[#875700] disabled:cursor-not-allowed disabled:opacity-40"
+                    }
                   >
-                    {selectedUser.isBlocked
+                    {actionLoading ===
+                    selectedUser._id
+                      ? "PROCESSING..."
+                      : selectedUser.isBlocked
                       ? "UNBLOCK CUSTOMER"
                       : "BLOCK CUSTOMER"}
                   </button>
@@ -717,12 +1019,24 @@ const CustomerManagementPage = () => {
                         selectedUser
                       )
                     }
-                    className="flex-1 border border-red-900 py-3 text-[6px] tracking-[0.12em] text-red-400 hover:bg-[#241313] transition disabled:opacity-40"
+                    className="h-[40px] rounded-[8px] border border-[#ffd0d8] bg-[#fff5f6] text-[7px] font-medium uppercase tracking-[0.08em] text-[#d93650] transition-all duration-200 hover:border-[#ffabb9] hover:bg-[#ffe9ed] hover:text-[#c52d47] active:bg-[#ffe0e5] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     DELETE CUSTOMER
                   </button>
 
                 </div>
+
+                {/* CLOSE */}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedUser(null)
+                  }
+                  className="mt-[9px] h-[38px] w-full rounded-[8px] border border-[#dce4ee] bg-white text-[7px] font-medium uppercase tracking-[0.1em] text-[#718096] transition-all duration-200 hover:border-[#9eb9eb] hover:bg-[#f3f7ff] hover:text-[#1557f5]"
+                >
+                  CLOSE
+                </button>
 
               </div>
 
@@ -738,30 +1052,27 @@ const CustomerManagementPage = () => {
   );
 };
 
-
-/* =========================================
-   CUSTOMER DETAIL
-========================================= */
+// =========================================================
+// CUSTOMER DETAIL
+// =========================================================
 
 const CustomerDetail = ({
   label,
   value,
 }) => {
-
   return (
-    <div className="flex items-center justify-between border-b border-[#292929] pb-3">
+    <div className="flex items-center justify-between border-b border-[#edf1f6] pb-[11px]">
 
-      <span className="text-[6px] tracking-[0.12em] text-gray-600">
+      <span className="text-[7px] uppercase tracking-[0.12em] text-[#8996a8]">
         {label}
       </span>
 
-      <span className="max-w-[240px] text-right text-[7px] text-gray-300">
+      <span className="max-w-[270px] break-all text-right text-[8px] text-[#4f5e73]">
         {value}
       </span>
 
     </div>
   );
 };
-
 
 export default CustomerManagementPage;
