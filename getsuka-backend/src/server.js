@@ -30,6 +30,8 @@ import couponRoutes from "./features/coupon/routes/couponRoutes.js";
 
 import walletRoutes from "./features/wallet/routes/walletRoutes.js";
 
+import referralRoutes from "./features/referral/routes/referralRoutes.js";
+
 import connectDB from "./config/db.js";
 
 import publicProductRoutes from "./features/product/routes/publicProductRoutes.js";
@@ -197,6 +199,15 @@ app.use(
 );
 
 // =========================================================
+// REFERRAL ROUTES
+// =========================================================
+
+app.use(
+  "/api/user/referrals",
+  referralRoutes
+);
+
+// =========================================================
 // HEALTH CHECK
 // =========================================================
 
@@ -240,7 +251,7 @@ const createDefaultCategory = async () => {
       );
     } else {
       console.log(
-        ''
+        ""
       );
     }
   } catch (error) {

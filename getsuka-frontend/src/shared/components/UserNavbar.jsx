@@ -37,19 +37,6 @@ const UserNavbar = () => {
         return;
       }
 
-      /*
-       * Count UNIQUE product + variant combinations.
-       *
-       * Example:
-       *
-       * Luffy Small x 3
-       * = 1
-       *
-       * Luffy Small x 3
-       * Luffy Medium x 1
-       * = 2
-       */
-
       const uniqueVariants =
         new Set();
 
@@ -352,34 +339,6 @@ const UserNavbar = () => {
           SHOP
         </button>
 
-        {/* NEW ARRIVALS */}
-
-        <button
-          type="button"
-          onClick={() =>
-            navigateTo(
-              "/new-arrivals"
-            )
-          }
-          className="whitespace-nowrap text-[13px] tracking-wide text-white transition hover:text-gray-400"
-        >
-          NEW ARRIVALS
-        </button>
-
-        {/* SHOP BY ANIME */}
-
-        <button
-          type="button"
-          onClick={() =>
-            navigateTo(
-              "/shop-by-anime"
-            )
-          }
-          className="whitespace-nowrap text-[13px] tracking-wide text-white transition hover:text-gray-400"
-        >
-          SHOP BY ANIME
-        </button>
-
       </nav>
 
       {/* =====================================================
@@ -387,18 +346,6 @@ const UserNavbar = () => {
       ===================================================== */}
 
       <div className="ml-auto hidden items-center gap-5 md:flex lg:gap-7">
-
-        {/* SEARCH */}
-
-        <button
-          type="button"
-          onClick={() => {
-            // Search functionality later
-          }}
-          className="whitespace-nowrap text-[13px] tracking-wide text-white transition hover:text-gray-400"
-        >
-          SEARCH
-        </button>
 
         {/* =================================================
             WISHLIST
@@ -596,48 +543,6 @@ const UserNavbar = () => {
               SHOP
             </button>
 
-            {/* NEW ARRIVALS */}
-
-            <button
-              type="button"
-              onClick={() =>
-                navigateTo(
-                  "/new-arrivals"
-                )
-              }
-              className="w-full border-b border-white/10 py-4 text-left text-sm tracking-[0.15em] text-white transition hover:text-gray-400"
-            >
-              NEW ARRIVALS
-            </button>
-
-            {/* SHOP BY ANIME */}
-
-            <button
-              type="button"
-              onClick={() =>
-                navigateTo(
-                  "/shop-by-anime"
-                )
-              }
-              className="w-full border-b border-white/10 py-4 text-left text-sm tracking-[0.15em] text-white transition hover:text-gray-400"
-            >
-              SHOP BY ANIME
-            </button>
-
-            {/* SEARCH */}
-
-            <button
-              type="button"
-              onClick={() => {
-                closeMenu();
-
-                // Search functionality later
-              }}
-              className="w-full border-b border-white/10 py-4 text-left text-sm tracking-[0.15em] text-white transition hover:text-gray-400"
-            >
-              SEARCH
-            </button>
-
             {/* =================================================
                 WISHLIST
             ================================================= */}
@@ -645,9 +550,7 @@ const UserNavbar = () => {
             <button
               type="button"
               onClick={() =>
-                navigateTo(
-                  "/wishlist"
-                )
+                navigateTo("/wishlist")
               }
               className="flex w-full items-center justify-between border-b border-white/10 py-4 text-left text-sm tracking-[0.15em] text-white transition hover:text-gray-400"
             >

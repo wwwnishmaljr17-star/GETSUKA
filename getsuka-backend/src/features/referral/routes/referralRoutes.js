@@ -1,82 +1,139 @@
 import express from "express";
 
+import userAuthMiddleware from "../../../middlewares/userAuthMiddleware.js";
+
 import {
   getMyReferral,
   createReferral,
   applyReferral,
-  completeReferral,
   getReferralHistory,
 } from "../controllers/referralController.js";
 
-import authMiddleware from "../../../middleware/authMiddleware.js";
-
 const router = express.Router();
 
-/*
-|--------------------------------------------------------------------------
-| USER REFERRAL ROUTES
-|--------------------------------------------------------------------------
-*/
+// =========================================================
+// REFERRAL ROUTES
+// =========================================================
+//
+// Base URL:
+// /api/user/referrals
+//
+// All routes are protected using the same authentication
+// middleware used by the user order routes.
+//
+// =========================================================
 
-/*
- * Get current user's referral details
- *
- * GET /api/user/referrals
- */
+
+// =========================================================
+// GET MY REFERRAL INFORMATION
+// =========================================================
+//
+// GET /api/user/referrals
+//
+// Returns:
+// - Referral code
+// - Referral link
+// - Completed referrals
+// - Pending referrals
+// - Remaining referral slots
+// - Reward per referral
+// - Total earned
+// - Maximum earning
+//
+// =========================================================
+
 router.get(
   "/",
-  authMiddleware,
+  userAuthMiddleware,
   getMyReferral
 );
 
-/*
- * Create / get referral link
- *
- * POST /api/user/referrals/create
- */
+
+// =========================================================
+// CREATE / GET REFERRAL LINK
+// =========================================================
+//
+// POST /api/user/referrals/create
+//
+// Creates the user's referral code if it does not already
+// exist and returns the referral link.
+//
+// =========================================================
+
 router.post(
   "/create",
-  authMiddleware,
+  userAuthMiddleware,
   createReferral
 );
 
-/*
- * Apply referral code
- *
- * POST /api/user/referrals/apply
- *
- * This creates the pending referral.
- * It does NOT credit ₹350 immediately.
- */
+
+// =========================================================
+// APPLY REFERRAL CODE
+// =========================================================
+//
+// POST /api/user/referrals/apply
+//
+// Creates a pending referral.
+//
+// No ₹350 reward is credited here.
+//
+// =========================================================
+
 router.post(
   "/apply",
-  authMiddleware,
+  userAuthMiddleware,
   applyReferral
 );
 
-/*
- * Complete referral and credit ₹350
- *
- * POST /api/user/referrals/complete
- *
- * This should only be called by trusted backend logic
- * after the referral requirement has actually been completed.
- */
-router.post(
-  "/complete",
-  authMiddleware,
-  completeReferral
-);
 
-/*
- * Referral history
- *
- * GET /api/user/referrals/history
- */
+// =========================================================
+// GET REFERRAL HISTORY
+// =========================================================
+//
+// GET /api/user/referrals/history
+//
+// Returns all referrals made by the logged-in user.
+//
+// =========================================================
+
 router.get(
   "/history",
-  authMiddleware,
+  userAuthMiddleware,
   getReferralHistory
 );
+
+
+// =========================================================
+// NOTE
+// =========================================================
+//
+// completeReferral is intentionally NOT exposed as a public
+// user route.
+//
+// The completeReferral controller credits ₹350 to the
+// referrer's wallet. It should be called from trusted backend
+// logic only after the actual referral requirement is
+// completed.
+//
+// Example future flow:
+//
+// New user signs up with referral
+//              ↓
+// Referral becomes PENDING
+//              ↓
+// Required referral condition completed
+//              ↓
+// Backend calls completeReferral logic
+//              ↓
+// ₹350 credited to referrer's wallet
+//              ↓
+// Referral becomes COMPLETED
+//
+// =========================================================
+
+
+// =========================================================
+// EXPORT ROUTER
+// =========================================================
 
 export default router;

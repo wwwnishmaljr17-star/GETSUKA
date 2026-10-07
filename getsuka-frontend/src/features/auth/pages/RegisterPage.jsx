@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 
 import RegisterForm from "../components/RegisterForm";
 
@@ -8,8 +11,30 @@ import getsukaLogo from "../../../assets/auth/getsuka_logo.png";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [transparentLogo, setTransparentLogo] = useState(null);
+  const [transparentLogo, setTransparentLogo] =
+    useState(null);
+
+  // =========================================================
+  // CAPTURE REFERRAL CODE
+  // =========================================================
+
+  useEffect(() => {
+    const referralCode =
+      searchParams.get("ref");
+
+    if (referralCode) {
+      sessionStorage.setItem(
+        "referralCode",
+        referralCode.trim().toUpperCase()
+      );
+    }
+  }, [searchParams]);
+
+  // =========================================================
+  // PROCESS GETSUKA LOGO
+  // =========================================================
 
   useEffect(() => {
     const image = new Image();
@@ -17,12 +42,14 @@ const RegisterPage = () => {
     image.src = getsukaLogo;
 
     image.onload = () => {
-      const canvas = document.createElement("canvas");
+      const canvas =
+        document.createElement("canvas");
 
       canvas.width = image.width;
       canvas.height = image.height;
 
-      const context = canvas.getContext("2d");
+      const context =
+        canvas.getContext("2d");
 
       context.drawImage(
         image,
@@ -32,22 +59,29 @@ const RegisterPage = () => {
         image.height
       );
 
-      const imageData = context.getImageData(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
+      const imageData =
+        context.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
 
       const pixels = imageData.data;
 
-      // Remove white background
-      for (let i = 0; i < pixels.length; i += 4) {
+      // =====================================================
+      // REMOVE WHITE BACKGROUND
+      // =====================================================
+
+      for (
+        let i = 0;
+        i < pixels.length;
+        i += 4
+      ) {
         const red = pixels[i];
         const green = pixels[i + 1];
         const blue = pixels[i + 2];
 
-        // Detect white / near-white pixels
         if (
           red > 235 &&
           green > 235 &&
@@ -57,13 +91,21 @@ const RegisterPage = () => {
         }
       }
 
-      context.putImageData(imageData, 0, 0);
+      context.putImageData(
+        imageData,
+        0,
+        0
+      );
 
       setTransparentLogo(
         canvas.toDataURL("image/png")
       );
     };
   }, []);
+
+  // =========================================================
+  // PAGE
+  // =========================================================
 
   return (
     <div className="w-full min-h-screen bg-white">
@@ -91,7 +133,7 @@ const RegisterPage = () => {
           "
         >
 
-          {/* Background Artwork */}
+          {/* BACKGROUND ARTWORK */}
 
           <img
             src={loginArt}
@@ -103,7 +145,7 @@ const RegisterPage = () => {
             "
           />
 
-          {/* Subtle Overlay */}
+          {/* SUBTLE OVERLAY */}
 
           <div className="absolute inset-0 bg-black/10 pointer-events-none" />
 
@@ -129,7 +171,6 @@ const RegisterPage = () => {
           )}
 
         </div>
-
 
         {/* ============================================
             RIGHT — REGISTER
@@ -189,13 +230,11 @@ const RegisterPage = () => {
 
             </div>
 
-
             {/* ========================================
                 REGISTER FORM
             ======================================== */}
 
             <RegisterForm />
-
 
             {/* ========================================
                 LOGIN
@@ -217,7 +256,9 @@ const RegisterPage = () => {
 
               <button
                 type="button"
-                onClick={() => navigate("/login")}
+                onClick={() =>
+                  navigate("/login")
+                }
                 className="
                   text-black
                   font-semibold
@@ -228,7 +269,6 @@ const RegisterPage = () => {
               </button>
 
             </p>
-
 
             {/* ========================================
                 FOOTER

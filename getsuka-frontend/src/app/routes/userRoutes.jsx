@@ -15,6 +15,8 @@ import UpdateProfilePage from "../../features/user-side/account/pages/UpdateProf
 import AddressesPage from "../../features/user-side/account/pages/AddressesPage";
 import WalletPage from "../../features/user-side/wallet/pages/WalletPage";
 
+import ReferralPage from "../../features/user-side/referral/pages/ReferralPage";
+
 import ProductListingPage from "../../features/user-side/products/pages/ProductListingPage";
 import ProductDetailsPage from "../../features/user-side/products/pages/ProductDetailsPage";
 
@@ -249,6 +251,19 @@ export const userRoutes = [
     element: (
       <ProtectedRoute>
         <WalletPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // REFER & EARN
+  // =========================================================
+
+  {
+    path: "/account/referral",
+    element: (
+      <ProtectedRoute>
+        <ReferralPage />
       </ProtectedRoute>
     ),
   },
