@@ -14,14 +14,18 @@ import CategoryManagementPage from "../../features/admin-side/category-managemen
 
 import CustomerManagementPage from "../../features/admin-side/customer-management/pages/CustomerManagementPage";
 
-import AdminProfilePage from "../../features/admin-side/profile/pages/AdminProfilePage";
-import AdminEditProfilePage from "../../features/admin-side/profile/pages/AdminEditProfilePage";
-
 import AdminOrderManagementPage from "../../features/admin-side/order-management/pages/AdminOrderManagementPage";
 import AdminOrderDetailsPage from "../../features/admin-side/order-management/pages/AdminOrderDetailsPage";
 
+import CouponManagementPage from "../../features/admin-side/coupon-management/pages/CouponManagementPage";
+import CreateCouponPage from "../../features/admin-side/coupon-management/pages/CreateCouponPage";
+import EditCouponPage from "../../features/admin-side/coupon-management/pages/EditCouponPage";
+
 import InventoryManagementPage from "../../features/admin-side/inventory/pages/InventoryManagementPage";
 import InventoryDetailsPage from "../../features/admin-side/inventory/pages/InventoryDetailsPage";
+
+import AdminProfilePage from "../../features/admin-side/profile/pages/AdminProfilePage";
+import AdminEditProfilePage from "../../features/admin-side/profile/pages/AdminEditProfilePage";
 
 import AdminProtectedRoute from "../../shared/components/AdminProtectedRoute";
 import AdminLayout from "../../shared/components/AdminLayout";
@@ -154,6 +158,43 @@ export const adminRoutes = [
       <AdminProtectedRoute>
         <AdminLayout>
           <AdminOrderDetailsPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // COUPONS
+  // =========================================================
+
+  {
+    path: "/admin/coupons",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <CouponManagementPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/admin/coupons/new",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <CreateCouponPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/admin/coupons/:couponId/edit",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <EditCouponPage />
         </AdminLayout>
       </AdminProtectedRoute>
     ),

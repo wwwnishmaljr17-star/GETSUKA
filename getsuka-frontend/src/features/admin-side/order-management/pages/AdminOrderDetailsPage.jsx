@@ -262,6 +262,124 @@ const AdminOrderDetailsPage = () => {
   };
 
   // =========================================================
+  // ORDER STATUS TRANSITIONS
+  // =========================================================
+  // Admin can only move an order forward.
+  //
+  // placed
+  //   -> confirmed
+  //   -> cancelled
+  //
+  // confirmed
+  //   -> shipped
+  //   -> cancelled
+  //
+  // shipped
+  //   -> out_for_delivery
+  //
+  // out_for_delivery
+  //   -> delivered
+  //
+  // delivered / cancelled / returned
+  //   -> no further order-status changes
+
+  const getAvailableStatuses = (currentStatus) => {
+    switch (currentStatus) {
+      case "placed":
+        return [
+          {
+            value: "placed",
+            label: "Placed",
+          },
+          {
+            value: "confirmed",
+            label: "Confirmed",
+          },
+          {
+            value: "cancelled",
+            label: "Cancelled",
+          },
+        ];
+
+      case "confirmed":
+        return [
+          {
+            value: "confirmed",
+            label: "Confirmed",
+          },
+          {
+            value: "shipped",
+            label: "Shipped",
+          },
+          {
+            value: "cancelled",
+            label: "Cancelled",
+          },
+        ];
+
+      case "shipped":
+        return [
+          {
+            value: "shipped",
+            label: "Shipped",
+          },
+          {
+            value: "out_for_delivery",
+            label: "Out For Delivery",
+          },
+        ];
+
+      case "out_for_delivery":
+        return [
+          {
+            value: "out_for_delivery",
+            label: "Out For Delivery",
+          },
+          {
+            value: "delivered",
+            label: "Delivered",
+          },
+        ];
+
+      case "delivered":
+        return [
+          {
+            value: "delivered",
+            label: "Delivered",
+          },
+        ];
+
+      case "cancelled":
+        return [
+          {
+            value: "cancelled",
+            label: "Cancelled",
+          },
+        ];
+
+      case "returned":
+        return [
+          {
+            value: "returned",
+            label: "Returned",
+          },
+        ];
+
+      default:
+        return currentStatus
+          ? [
+              {
+                value: currentStatus,
+                label: formatStatus(
+                  currentStatus
+                ),
+              },
+            ]
+          : [];
+    }
+  };
+
+  // =========================================================
   // UPDATE ORDER STATUS
   // =========================================================
 
@@ -281,6 +399,30 @@ const AdminOrderDetailsPage = () => {
       setStatusError(
         "Please select a different status."
       );
+      return;
+    }
+
+    const allowedNextStatuses =
+      getAvailableStatuses(
+        order.status
+      ).map(
+        (statusOption) =>
+          statusOption.value
+      );
+
+    if (
+      !allowedNextStatuses.includes(
+        selectedStatus
+      )
+    ) {
+      setStatusError(
+        "This order status transition is not allowed."
+      );
+
+      setSelectedStatus(
+        order.status || ""
+      );
+
       return;
     }
 
@@ -304,7 +446,8 @@ const AdminOrderDetailsPage = () => {
         setOrder(updatedOrder);
 
         setSelectedStatus(
-          updatedOrder.status || selectedStatus
+          updatedOrder.status ||
+            selectedStatus
         );
       } else {
         setOrder((previous) => ({
@@ -354,6 +497,7 @@ const AdminOrderDetailsPage = () => {
 
       if (updatedOrder) {
         setOrder(updatedOrder);
+
         setSelectedStatus(
           updatedOrder.status || ""
         );
@@ -413,6 +557,7 @@ const AdminOrderDetailsPage = () => {
 
       if (updatedOrder) {
         setOrder(updatedOrder);
+
         setSelectedStatus(
           updatedOrder.status || ""
         );
@@ -892,6 +1037,7 @@ const AdminOrderDetailsPage = () => {
         <section className="border-b border-[#edf1f6] px-[26px] pb-[24px] pt-[25px]">
 
           <div className="flex items-center gap-[8px] text-[9px]">
+
             <button
               type="button"
               onClick={() =>
@@ -909,6 +1055,7 @@ const AdminOrderDetailsPage = () => {
             <span className="text-[#8b97a8]">
               Order Details
             </span>
+
           </div>
 
           <h1 className="mt-[22px] text-[25px] font-semibold tracking-[-0.035em] text-[#162033]">
@@ -1537,35 +1684,18 @@ const AdminOrderDetailsPage = () => {
                 disabled={statusLoading}
                 className="mt-[9px] h-[43px] w-full rounded-[8px] border border-[#dfe6ef] bg-[#f9fbfe] px-[12px] text-[9px] text-[#263247] outline-none transition hover:border-[#c4d2e5] focus:border-[#6f9cf7] focus:bg-white"
               >
-
-                <option value="placed">
-                  Placed
-                </option>
-
-                <option value="confirmed">
-                  Confirmed
-                </option>
-
-                <option value="shipped">
-                  Shipped
-                </option>
-
-                <option value="out_for_delivery">
-                  Out For Delivery
-                </option>
-
-                <option value="delivered">
-                  Delivered
-                </option>
-
-                <option value="cancelled">
-                  Cancelled
-                </option>
-
-                <option value="returned">
-                  Returned
-                </option>
-
+                {getAvailableStatuses(
+                  order.status
+                ).map(
+                  (statusOption) => (
+                    <option
+                      key={statusOption.value}
+                      value={statusOption.value}
+                    >
+                      {statusOption.label}
+                    </option>
+                  )
+                )}
               </select>
 
             </div>

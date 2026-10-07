@@ -63,6 +63,49 @@ const orderItemSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+
+    // =======================================================
+    // ITEM CANCELLATION
+    // =======================================================
+
+    itemStatus: {
+      type: String,
+      enum: [
+        "active",
+        "cancelled",
+      ],
+      default: "active",
+    },
+
+    cancellationReason: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
+    },
+
+    // =======================================================
+    // ITEM REFUND
+    // =======================================================
+
+    refundStatus: {
+      type: String,
+      enum: [
+        "none",
+        "refunded",
+      ],
+      default: "none",
+    },
+
+    refundedAmount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
   },
   {
     _id: true,
@@ -232,6 +275,8 @@ const orderSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       enum: [
+        "razorpay",
+        "wallet",
         "upi",
         "card",
         "netbanking",
@@ -279,7 +324,7 @@ const orderSchema = new mongoose.Schema(
     },
 
     // =======================================================
-    // CANCELLATION
+    // ORDER-LEVEL CANCELLATION
     // =======================================================
 
     cancellationReason: {

@@ -26,6 +26,33 @@ const ProductDetailsPage = () => {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
 
+  const [toast, setToast] = useState({
+    show: false,
+    type: "success",
+    title: "",
+    message: "",
+  });
+
+  const showToast = (
+    title,
+    message,
+    type = "success"
+  ) => {
+    setToast({
+      show: true,
+      type,
+      title,
+      message,
+    });
+
+    setTimeout(() => {
+      setToast((previous) => ({
+        ...previous,
+        show: false,
+      }));
+    }, 3500);
+  };
+
   const [openSection, setOpenSection] =
     useState("description");
 
@@ -153,10 +180,12 @@ const ProductDetailsPage = () => {
         err
       );
 
-      alert(
+      showToast(
+        "WISHLIST ERROR",
         err?.response?.data?.message ||
           err?.message ||
-          "Unable to update wishlist."
+          "Unable to update wishlist.",
+        "error"
       );
     } finally {
       setWishlistLoading(false);
@@ -685,32 +714,40 @@ const ProductDetailsPage = () => {
       product.isListed === false ||
       product.isDeleted === true
     ) {
-      alert(
-        "This product is no longer available."
+      showToast(
+        "PRODUCT UNAVAILABLE",
+        "This product is no longer available.",
+        "error"
       );
 
       return false;
     }
 
     if (!selectedSize) {
-      alert(
-        "Please select a size."
+      showToast(
+        "SELECT A SIZE",
+        "Please select a size before adding this product.",
+        "error"
       );
 
       return false;
     }
 
     if (!selectedColor) {
-      alert(
-        "Please select a color."
+      showToast(
+        "SELECT A COLOR",
+        "Please select a color before adding this product.",
+        "error"
       );
 
       return false;
     }
 
     if (!selectedVariant) {
-      alert(
-        "This size and color combination is unavailable."
+      showToast(
+        "VARIANT UNAVAILABLE",
+        "This size and color combination is unavailable.",
+        "error"
       );
 
       return false;
@@ -758,14 +795,16 @@ const ProductDetailsPage = () => {
             selectedVariant.stock
           )
         ) {
-          alert(
+          showToast(
+            "LIMITED STOCK",
             `Only ${selectedVariant.stock} item${
               Number(
                 selectedVariant.stock
               ) > 1
                 ? "s"
                 : ""
-            } available in stock.`
+            } available in stock.`,
+            "error"
           );
 
           return false;
@@ -829,8 +868,10 @@ const ProductDetailsPage = () => {
         )
       );
 
-      alert(
-        "Added to cart."
+      showToast(
+        "ADDED TO CART",
+        `${product.name} has been added to your cart.`,
+        "success"
       );
 
       return true;
@@ -840,8 +881,10 @@ const ProductDetailsPage = () => {
         error
       );
 
-      alert(
-        "Unable to add product to cart."
+      showToast(
+        "CART ERROR",
+        "Unable to add product to cart.",
+        "error"
       );
 
       return false;
@@ -978,6 +1021,44 @@ const ProductDetailsPage = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
+
+      {toast.show && (
+        <div className="fixed right-5 top-24 z-[9999] w-[360px] max-w-[calc(100vw-40px)] border border-[#e9002d] bg-black shadow-2xl">
+          <div className="flex items-start gap-4 p-5">
+
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[#e9002d] text-[#e9002d]">
+              <span className="text-sm font-bold">
+                {toast.type === "success" ? "✓" : "!"}
+              </span>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-[#e9002d]">
+                {toast.title}
+              </p>
+
+              <p className="mt-2 text-[11px] leading-5 text-[#999]">
+                {toast.message}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setToast((previous) => ({
+                  ...previous,
+                  show: false,
+                }))
+              }
+              className="shrink-0 text-lg leading-none text-[#555] transition hover:text-white"
+              aria-label="Close notification"
+            >
+              ×
+            </button>
+
+          </div>
+        </div>
+      )}
 
       {/* =====================================================
           PRODUCT

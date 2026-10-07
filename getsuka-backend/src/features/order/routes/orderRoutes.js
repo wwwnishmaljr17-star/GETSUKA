@@ -7,6 +7,7 @@ import {
   getUserOrders,
   getUserOrderById,
   cancelUserOrder,
+  cancelUserOrderItem,
   returnUserOrder,
 } from "../controllers/orderController.js";
 
@@ -38,6 +39,20 @@ router.get(
   "/",
   userAuthMiddleware,
   getUserOrders
+);
+
+// =========================================================
+// CANCEL SINGLE ORDER ITEM
+// =========================================================
+
+/*
+  POST /api/user/orders/:orderId/items/:itemId/cancel
+*/
+
+router.post(
+  "/:orderId/items/:itemId/cancel",
+  userAuthMiddleware,
+  cancelUserOrderItem
 );
 
 // =========================================================

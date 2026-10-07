@@ -13,6 +13,7 @@ import PublicRoute from "../../shared/components/PublicRoute";
 import UserAccountPage from "../../features/user-side/account/pages/UserAccountPage";
 import UpdateProfilePage from "../../features/user-side/account/pages/UpdateProfilePage";
 import AddressesPage from "../../features/user-side/account/pages/AddressesPage";
+import WalletPage from "../../features/user-side/wallet/pages/WalletPage";
 
 import ProductListingPage from "../../features/user-side/products/pages/ProductListingPage";
 import ProductDetailsPage from "../../features/user-side/products/pages/ProductDetailsPage";
@@ -25,10 +26,12 @@ import ShippingPage from "../../features/user-side/checkout/pages/ShippingPage";
 import ReviewPage from "../../features/user-side/checkout/pages/ReviewPage";
 import PaymentPage from "../../features/user-side/checkout/pages/PaymentPage";
 
-import OrderPlacedPage from "../../features/user-side/checkout/pages/OrderPlacedPage";
+import OrderPlacedPage from "../../features/user-side/orders/pages/OrderPlacedPage";
 
 import OrdersPage from "../../features/user-side/orders/pages/OrdersPage";
 import OrderDetailsPage from "../../features/user-side/orders/pages/OrderDetailsPage";
+
+import PaymentFailedPage from "../../features/user-side/checkout/pages/PaymentFailedPage";
 
 export const userRoutes = [
   // =========================================================
@@ -171,6 +174,15 @@ export const userRoutes = [
   },
 
   {
+    path: "/checkout/payment-failed",
+    element: (
+      <ProtectedRoute>
+        <PaymentFailedPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  {
     path: "/checkout/order-placed",
     element: (
       <ProtectedRoute>
@@ -228,6 +240,15 @@ export const userRoutes = [
     element: (
       <ProtectedRoute>
         <AddressesPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  {
+    path: "/account/wallet",
+    element: (
+      <ProtectedRoute>
+        <WalletPage />
       </ProtectedRoute>
     ),
   },

@@ -22,6 +22,8 @@ export const getUsers = async (req, res) => {
       1
     );
 
+ 
+
     const searchFilter = search.trim()
       ? {
           $or: [
@@ -46,11 +48,20 @@ export const getUsers = async (req, res) => {
         searchFilter
       );
 
+
+     
+
+      
+
+
     const users = await User.find(
       searchFilter
     )
     
 // \
+
+
+
       .select("-password")
       .sort({
         createdAt: -1,

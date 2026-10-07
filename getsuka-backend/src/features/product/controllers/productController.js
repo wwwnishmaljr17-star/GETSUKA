@@ -378,7 +378,7 @@ export const getProducts = async (req, res) => {
       search = "",
       page = 1,
       limit = 10,
-      sort = "newest",
+      sort = "name-az",
       anime = "",
       category = "",
       status = "",
@@ -558,7 +558,7 @@ export const getProducts = async (req, res) => {
     };
 
     switch (sort) {
-      case "price-low":
+      case "name-az":
         sortOption = {
           price: 1,
         };
@@ -570,7 +570,7 @@ export const getProducts = async (req, res) => {
         };
         break;
 
-      case "name-az":
+      case "name-a":
         sortOption = {
           name: 1,
         };

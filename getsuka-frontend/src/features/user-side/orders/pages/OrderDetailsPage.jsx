@@ -11,7 +11,7 @@ import {
 
 import {
   getUserOrderById,
-  cancelUserOrder,
+  cancelUserOrderItem,
   returnUserOrder,
 } from "../api/orderApi";
 
@@ -24,20 +24,26 @@ const OrderDetailsPage = () => {
   const [error, setError] = useState("");
 
   // =========================================================
-  // CANCEL ORDER STATES
+  // ITEM CANCELLATION STATES
   // =========================================================
 
-  const [showCancelModal, setShowCancelModal] =
+  const [showItemCancelModal, setShowItemCancelModal] =
     useState(false);
 
-  const [cancellationReason, setCancellationReason] =
+  const [selectedItem, setSelectedItem] =
+    useState(null);
+
+  const [itemCancellationReason, setItemCancellationReason] =
     useState("");
 
-  const [cancelLoading, setCancelLoading] =
+  const [itemCancelLoading, setItemCancelLoading] =
     useState(false);
 
-  const [cancelError, setCancelError] =
+  const [itemCancelError, setItemCancelError] =
     useState("");
+
+  const [itemCancelRefund, setItemCancelRefund] =
+    useState(null);
 
   // =========================================================
   // RETURN REQUEST STATES
@@ -360,55 +366,67 @@ const OrderDetailsPage = () => {
     getReturnWindowInfo();
 
   // =========================================================
-  // OPEN CANCEL MODAL
+  // OPEN ITEM CANCEL MODAL
   // =========================================================
 
-  const handleOpenCancelModal = () => {
-    setCancellationReason("");
-    setCancelError("");
-    setShowCancelModal(true);
+  const handleOpenItemCancelModal = (item) => {
+    setSelectedItem(item);
+    setItemCancellationReason("");
+    setItemCancelError("");
+    setItemCancelRefund(null);
+    setShowItemCancelModal(true);
   };
 
   // =========================================================
-  // CLOSE CANCEL MODAL
+  // CLOSE ITEM CANCEL MODAL
   // =========================================================
 
-  const handleCloseCancelModal = () => {
-    if (cancelLoading) {
+  const handleCloseItemCancelModal = () => {
+    if (itemCancelLoading) {
       return;
     }
 
-    setShowCancelModal(false);
-    setCancellationReason("");
-    setCancelError("");
+    setShowItemCancelModal(false);
+    setSelectedItem(null);
+    setItemCancellationReason("");
+    setItemCancelError("");
+    setItemCancelRefund(null);
   };
 
   // =========================================================
-  // CANCEL ORDER
+  // CANCEL SINGLE ITEM
   // =========================================================
 
-  const handleCancelOrder = async () => {
-    const reason =
-      cancellationReason.trim();
+  const handleCancelItem = async () => {
+    const reason = itemCancellationReason.trim();
+
+    if (!selectedItem?._id) {
+      setItemCancelError(
+        "Order item information is missing."
+      );
+      return;
+    }
 
     if (!reason) {
-      setCancelError(
+      setItemCancelError(
         "Please enter a cancellation reason."
       );
       return;
     }
 
-    if (cancelLoading) {
+    if (itemCancelLoading) {
       return;
     }
 
     try {
-      setCancelLoading(true);
-      setCancelError("");
+      setItemCancelLoading(true);
+      setItemCancelError("");
+      setItemCancelRefund(null);
 
       const response =
-        await cancelUserOrder(
+        await cancelUserOrderItem(
           orderId,
+          selectedItem._id,
           reason
         );
 
@@ -418,22 +436,23 @@ const OrderDetailsPage = () => {
         response?.data;
 
       if (cancelledOrder) {
-        setOrder((previousOrder) => ({
-          ...previousOrder,
-          ...cancelledOrder,
-        }));
+        setOrder(cancelledOrder);
       } else {
-        setOrder((previousOrder) => ({
-          ...previousOrder,
-          status: "cancelled",
-          cancellationReason: reason,
-          cancelledAt:
-            new Date().toISOString(),
-        }));
+        throw new Error(
+          response?.message ||
+            "Unable to update the order."
+        );
       }
 
-      setShowCancelModal(false);
-      setCancellationReason("");
+      if (response?.refund) {
+        setItemCancelRefund(
+          response.refund
+        );
+      }
+
+      setShowItemCancelModal(false);
+      setSelectedItem(null);
+      setItemCancellationReason("");
 
       try {
         const refreshedResponse =
@@ -450,22 +469,23 @@ const OrderDetailsPage = () => {
         }
       } catch (refreshError) {
         console.error(
-          "Refresh Cancelled Order Error:",
+          "Refresh Cancelled Item Error:",
           refreshError
         );
       }
     } catch (error) {
       console.error(
-        "Cancel Order Error:",
+        "Cancel Item Error:",
         error
       );
 
-      setCancelError(
+      setItemCancelError(
         error?.response?.data?.message ||
-          "Unable to cancel the order. Please try again."
+          error?.message ||
+          "Unable to cancel this item. Please try again."
       );
     } finally {
-      setCancelLoading(false);
+      setItemCancelLoading(false);
     }
   };
 
@@ -555,8 +575,6 @@ const OrderDetailsPage = () => {
           ...previousOrder,
           ...requestedOrder,
 
-          // Customer request must NOT
-          // immediately mark the order returned.
           status:
             requestedOrder?.status ||
             previousOrder?.status,
@@ -654,6 +672,113 @@ const OrderDetailsPage = () => {
       ? order.items
       : [];
 
+    // =========================================================
+    // INVOICE REFUND CALCULATIONS
+    // =========================================================
+    //
+    // The original order totals remain unchanged in the database.
+    // For the invoice, however, we calculate the CURRENT financial
+    // state from the order items.
+    //
+    // Cancelled items:
+    //   - are shown as CANCELLED / REFUNDED
+    //   - their refundedAmount is added to total refunds
+    //
+    // Active items:
+    //   - remain part of the current balance
+    //
+    // Original Total - Total Refunded = Remaining Balance
+    //
+    // If every item is cancelled:
+    //
+    // Total Refunded = Original Total
+    // Remaining Balance = ₹0
+    //
+    // =========================================================
+
+    const cancelledItems = items.filter(
+      (item) =>
+        (item?.itemStatus || "active") ===
+        "cancelled"
+    );
+
+    const activeItems = items.filter(
+      (item) =>
+        (item?.itemStatus || "active") !==
+        "cancelled"
+    );
+
+    const totalRefunded = cancelledItems.reduce(
+      (total, item) => {
+        const refundedAmount =
+          Number(item?.refundedAmount);
+
+        if (
+          Number.isFinite(refundedAmount) &&
+          refundedAmount > 0
+        ) {
+          return total + refundedAmount;
+        }
+
+        const itemTotal =
+          Number(item?.totalPrice) ||
+          Number(item?.price || 0) *
+            Number(item?.quantity || 0);
+
+        return total + Math.max(0, itemTotal);
+      },
+      0
+    );
+
+    const originalTotalAmount =
+      Number(order?.totalAmount || 0);
+
+    const calculatedRemainingBalance =
+      Math.max(
+        0,
+        originalTotalAmount - totalRefunded
+      );
+
+    const allItemsCancelled =
+      items.length > 0 &&
+      cancelledItems.length === items.length;
+
+    const remainingBalance =
+      allItemsCancelled
+        ? 0
+        : calculatedRemainingBalance;
+
+    const currentItemSubtotal =
+      activeItems.reduce(
+        (total, item) => {
+          const itemTotal =
+            Number(item?.totalPrice) ||
+            Number(item?.price || 0) *
+              Number(item?.quantity || 0);
+
+          return total + itemTotal;
+        },
+        0
+      );
+
+    const originalSubtotal =
+      Number(order?.subtotal || 0);
+
+    const refundDisplayAmount =
+      Math.min(
+        totalRefunded,
+        Math.max(0, originalTotalAmount)
+      );
+
+    const invoiceStatus =
+      allItemsCancelled
+        ? "FULLY REFUNDED"
+        : totalRefunded > 0
+        ? "PARTIALLY REFUNDED"
+        : formatStatus(
+            order?.paymentStatus
+          );
+
     const itemsHtml = items
       .map((item) => {
         const itemPrice =
@@ -661,13 +786,44 @@ const OrderDetailsPage = () => {
           Number(item?.price || 0) *
             Number(item?.quantity || 0);
 
+        const isItemCancelled =
+          (item?.itemStatus || "active") ===
+          "cancelled";
+
+        const refundedAmount =
+          Number(item?.refundedAmount || 0);
+
+        const itemStatusHtml =
+          isItemCancelled
+            ? `
+              <div class="item-status">
+                CANCELLED
+                ${
+                  refundedAmount > 0
+                    ? ` · REFUNDED ₹${refundedAmount.toLocaleString(
+                        "en-IN"
+                      )}`
+                    : ""
+                }
+              </div>
+            `
+            : "";
+
         return `
-          <tr>
+          <tr class="${
+            isItemCancelled
+              ? "cancelled-row"
+              : ""
+          }">
             <td>
-              <strong>${escapeHtml(
-                item?.productName ||
-                  "GETSUKA Product"
-              )}</strong>
+              <strong>
+                ${escapeHtml(
+                  item?.productName ||
+                    "GETSUKA Product"
+                )}
+              </strong>
+
+              ${itemStatusHtml}
 
               <div class="muted">
                 ${
@@ -691,12 +847,39 @@ const OrderDetailsPage = () => {
                   item?.quantity || 0
                 )}
               </div>
+
+              ${
+                isItemCancelled &&
+                item?.cancellationReason
+                  ? `
+                    <div class="cancel-reason">
+                      Cancellation reason:
+                      ${escapeHtml(
+                        item.cancellationReason
+                      )}
+                    </div>
+                  `
+                  : ""
+              }
             </td>
 
             <td class="right">
               ₹${itemPrice.toLocaleString(
                 "en-IN"
               )}
+
+              ${
+                isItemCancelled &&
+                refundedAmount > 0
+                  ? `
+                    <div class="refund-note">
+                      Refunded ₹${refundedAmount.toLocaleString(
+                        "en-IN"
+                      )}
+                    </div>
+                  `
+                  : ""
+              }
             </td>
           </tr>
         `;
@@ -794,6 +977,18 @@ const OrderDetailsPage = () => {
               font-size: 12px;
             }
 
+            .invoice-status {
+              display: inline-block;
+              margin-top: 10px;
+              padding: 6px 10px;
+              border: 1px solid #dfe7f3;
+              border-radius: 4px;
+              color: #1557f5;
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 1.3px;
+            }
+
             .meta {
               display: grid;
               grid-template-columns: 1fr 1fr;
@@ -843,6 +1038,26 @@ const OrderDetailsPage = () => {
               border-bottom: 1px solid #e7edf6;
               color: #16233f;
               font-size: 12px;
+              vertical-align: top;
+            }
+
+            .cancelled-row {
+              background: #fff7f7;
+            }
+
+            .item-status {
+              margin-top: 6px;
+              color: #d11a2a;
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 1px;
+            }
+
+            .cancel-reason {
+              margin-top: 6px;
+              color: #9aa4b5;
+              font-size: 9px;
+              line-height: 1.5;
             }
 
             .muted {
@@ -856,20 +1071,40 @@ const OrderDetailsPage = () => {
               white-space: nowrap;
             }
 
+            .refund-note {
+              margin-top: 5px;
+              color: #d11a2a;
+              font-size: 9px;
+              font-weight: 700;
+            }
+
             .summary {
-              width: 320px;
+              width: 360px;
               margin: 24px 0 0 auto;
             }
 
             .summary-row {
               display: flex;
               justify-content: space-between;
+              gap: 20px;
               padding: 8px 0;
               color: #64728a;
               font-size: 12px;
             }
 
-            .total {
+            .summary-row strong {
+              color: #16233f;
+            }
+
+            .refund-row {
+              color: #d11a2a;
+            }
+
+            .refund-row span:last-child {
+              font-weight: 700;
+            }
+
+            .balance {
               display: flex;
               justify-content: space-between;
               margin-top: 8px;
@@ -878,6 +1113,24 @@ const OrderDetailsPage = () => {
               color: #16233f;
               font-size: 16px;
               font-weight: 700;
+            }
+
+            .balance-value {
+              text-align: right;
+            }
+
+            .refund-info {
+              margin-top: 18px;
+              border: 1px solid #f0d5d8;
+              background: #fff7f7;
+              padding: 12px 14px;
+              color: #d11a2a;
+              font-size: 10px;
+              line-height: 1.6;
+            }
+
+            .refund-info strong {
+              font-size: 11px;
             }
 
             .footer {
@@ -898,6 +1151,31 @@ const OrderDetailsPage = () => {
               @page {
                 size: A4;
                 margin: 12mm;
+              }
+
+            }
+
+            @media (max-width: 640px) {
+
+              body {
+                padding: 20px;
+              }
+
+              .top {
+                flex-direction: column;
+                gap: 20px;
+              }
+
+              .invoice-title {
+                text-align: left;
+              }
+
+              .meta {
+                grid-template-columns: 1fr;
+              }
+
+              .summary {
+                width: 100%;
               }
 
             }
@@ -938,6 +1216,12 @@ const OrderDetailsPage = () => {
                       "—"
                   )}
                 </p>
+
+                <div class="invoice-status">
+                  ${escapeHtml(
+                    invoiceStatus
+                  )}
+                </div>
 
               </div>
 
@@ -1052,6 +1336,19 @@ const OrderDetailsPage = () => {
                     )
                   )}
 
+                  ${
+                    totalRefunded > 0
+                      ? `
+                        <br />
+
+                        Refund Status:
+                        ${escapeHtml(
+                          invoiceStatus
+                        )}
+                      `
+                      : ""
+                  }
+
                 </div>
 
               </div>
@@ -1089,16 +1386,36 @@ const OrderDetailsPage = () => {
               <div class="summary-row">
 
                 <span>
-                  Subtotal
+                  Original Subtotal
                 </span>
 
                 <span>
-                  ₹${subtotal.toLocaleString(
+                  ₹${originalSubtotal.toLocaleString(
                     "en-IN"
                   )}
                 </span>
 
               </div>
+
+              ${
+                totalRefunded > 0
+                  ? `
+                    <div class="summary-row">
+
+                      <span>
+                        Current Active Items
+                      </span>
+
+                      <span>
+                        ₹${currentItemSubtotal.toLocaleString(
+                          "en-IN"
+                        )}
+                      </span>
+
+                    </div>
+                  `
+                  : ""
+              }
 
               <div class="summary-row">
 
@@ -1152,19 +1469,89 @@ const OrderDetailsPage = () => {
                   : ""
               }
 
-              <div class="total">
+              <div class="summary-row">
 
                 <span>
-                  TOTAL
+                  Original Order Total
                 </span>
 
                 <span>
-                  ₹${totalAmount.toLocaleString(
+                  ₹${originalTotalAmount.toLocaleString(
                     "en-IN"
                   )}
                 </span>
 
               </div>
+
+              ${
+                refundDisplayAmount > 0
+                  ? `
+                    <div class="summary-row refund-row">
+
+                      <span>
+                        Refunded to Wallet
+                      </span>
+
+                      <span>
+                        - ₹${refundDisplayAmount.toLocaleString(
+                          "en-IN"
+                        )}
+                      </span>
+
+                    </div>
+                  `
+                  : ""
+              }
+
+              <div class="balance">
+
+                <span>
+                  ${
+                    allItemsCancelled
+                      ? "BALANCE"
+                      : "REMAINING BALANCE"
+                  }
+                </span>
+
+                <span class="balance-value">
+                  ₹${remainingBalance.toLocaleString(
+                    "en-IN"
+                  )}
+                </span>
+
+              </div>
+
+              ${
+                totalRefunded > 0
+                  ? `
+                    <div class="refund-info">
+
+                      <strong>
+                        ${
+                          allItemsCancelled
+                            ? "FULLY REFUNDED"
+                            : "PARTIAL REFUND"
+                        }
+                      </strong>
+
+                      <br />
+
+                      ${
+                        allItemsCancelled
+                          ? `₹${refundDisplayAmount.toLocaleString(
+                              "en-IN"
+                            )} has been refunded to your GETSUKA wallet. The remaining balance is ₹0.`
+                          : `₹${refundDisplayAmount.toLocaleString(
+                              "en-IN"
+                            )} has been refunded to your GETSUKA wallet. The remaining balance is ₹${remainingBalance.toLocaleString(
+                              "en-IN"
+                            )}.`
+                      }
+
+                    </div>
+                  `
+                  : ""
+              }
 
             </div>
 
@@ -1356,17 +1743,6 @@ const OrderDetailsPage = () => {
             </div>
 
           </div>
-
-          <button
-            type="button"
-            className="self-start border border-white/40 px-7 py-3 text-[10px] uppercase tracking-[0.2em] text-white transition hover:border-red-500 hover:text-red-500 sm:self-auto"
-          >
-            TRACK ORDER
-
-            <span className="ml-2 text-red-500">
-              🚚
-            </span>
-          </button>
 
         </div>
 
@@ -1688,6 +2064,68 @@ const OrderDetailsPage = () => {
 
                             </div>
 
+                            {/* ITEM CANCELLATION */}
+
+                            {(item?.itemStatus || "active") ===
+                              "cancelled" ? (
+                              <div className="mt-4 border border-red-950 bg-red-950/10 px-4 py-3">
+
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+
+                                  <div>
+
+                                    <p className="text-[9px] uppercase tracking-[0.18em] text-red-500">
+                                      ITEM CANCELLED
+                                    </p>
+
+                                    {item?.cancellationReason && (
+                                      <p className="mt-1 text-[11px] leading-5 text-gray-500">
+                                        {item.cancellationReason}
+                                      </p>
+                                    )}
+
+                                  </div>
+
+                                  {Number(item?.refundedAmount || 0) > 0 && (
+                                    <div className="text-right">
+
+                                      <p className="text-[9px] uppercase tracking-[0.15em] text-gray-600">
+                                        REFUNDED TO WALLET
+                                      </p>
+
+                                      <p className="mt-1 text-xs font-semibold text-red-500">
+                                        {formatPrice(
+                                          item.refundedAmount
+                                        )}
+                                      </p>
+
+                                    </div>
+                                  )}
+
+                                </div>
+
+                              </div>
+                            ) : (
+                              !isCancelled &&
+                              !isReturned &&
+                              (order.status === "placed" ||
+                                order.status === "confirmed") && (
+                                <div className="mt-4 flex justify-end">
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenItemCancelModal(item)
+                                    }
+                                    className="border border-white/15 px-4 py-2 text-[9px] uppercase tracking-[0.16em] text-gray-400 transition hover:border-red-600 hover:text-red-500"
+                                  >
+                                    CANCEL ITEM
+                                  </button>
+
+                                </div>
+                              )
+                            )}
+
                           </div>
 
                         </div>
@@ -1698,6 +2136,36 @@ const OrderDetailsPage = () => {
               </div>
 
             </div>
+
+            {/* ITEM REFUND CONFIRMATION */}
+
+            {itemCancelRefund?.amount > 0 && (
+              <div className="mt-6 border border-red-950 bg-red-950/10 px-5 py-4">
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+
+                  <div>
+
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-red-500">
+                      REFUND ADDED TO WALLET
+                    </p>
+
+                    <p className="mt-1 text-xs text-gray-500">
+                      The eligible refund for the cancelled item has been credited to your GETSUKA wallet.
+                    </p>
+
+                  </div>
+
+                  <p className="text-sm font-semibold text-red-500">
+                    {formatPrice(
+                      itemCancelRefund.amount
+                    )}
+                  </p>
+
+                </div>
+
+              </div>
+            )}
 
             {/* DELIVERY + PAYMENT */}
 
@@ -1862,7 +2330,7 @@ const OrderDetailsPage = () => {
                     {getItemCount() === 1
                       ? "item"
                       : "items"}
-                    )
+                  )
                   </span>
 
                   <span className="text-xs text-gray-200">
@@ -1988,29 +2456,6 @@ const OrderDetailsPage = () => {
                 CONTACT SUPPORT
 
               </button>
-
-              {/* CANCEL */}
-
-              {!isCancelled &&
-                !isReturned &&
-                order.status !==
-                  "delivered" && (
-                  <button
-                    type="button"
-                    onClick={
-                      handleOpenCancelModal
-                    }
-                    className="mt-7 flex w-full items-center justify-center gap-2 text-[10px] uppercase tracking-[0.18em] text-gray-400 transition hover:text-red-500"
-                  >
-
-                    <span>
-                      ⊗
-                    </span>
-
-                    CANCEL ORDER
-
-                  </button>
-                )}
 
               {/* RETURN REQUEST */}
 
@@ -2168,13 +2613,13 @@ const OrderDetailsPage = () => {
       </div>
 
       {/* =======================================================
-          CANCEL ORDER MODAL
+          ITEM CANCEL MODAL
       ======================================================= */}
 
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-5 backdrop-blur-sm">
+      {showItemCancelModal && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-5 backdrop-blur-sm">
 
-          <div className="w-full max-w-md border border-white/20 bg-[#080808] p-6 shadow-2xl sm:p-8">
+          <div className="w-full max-w-md border border-white/15 bg-[#080808] p-6 shadow-2xl sm:p-8">
 
             <div className="border-b border-white/10 pb-5">
 
@@ -2183,75 +2628,150 @@ const OrderDetailsPage = () => {
               </p>
 
               <h2 className="mt-3 text-lg font-medium uppercase tracking-wide text-white">
-                CANCEL ORDER
+                CANCEL ITEM
               </h2>
 
               <p className="mt-2 text-xs leading-5 text-gray-500">
-                Are you sure you want to
-                cancel this order?
+                Cancel only this product from your order. The remaining items will stay active.
               </p>
+
+            </div>
+
+            <div className="mt-6 border border-white/10 bg-white/[0.02] p-4">
+
+              <div className="flex items-center gap-4">
+
+                <div className="h-16 w-16 flex-shrink-0 overflow-hidden border border-white/10 bg-white/[0.03]">
+
+                  {getProductImage(
+                    selectedItem
+                  ) ? (
+                    <img
+                      src={getProductImage(
+                        selectedItem
+                      )}
+                      alt={
+                        selectedItem?.productName ||
+                        "Product"
+                      }
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[8px] uppercase tracking-wider text-gray-600">
+                      NO IMAGE
+                    </div>
+                  )}
+
+                </div>
+
+                <div className="min-w-0 flex-1">
+
+                  <p className="truncate text-xs font-medium uppercase tracking-wide text-white">
+                    {selectedItem?.productName ||
+                      "GETSUKA PRODUCT"}
+                  </p>
+
+                  <p className="mt-2 text-[10px] text-gray-500">
+                    Qty:{" "}
+                    {selectedItem?.quantity ||
+                      0}
+
+                    {selectedItem?.size
+                      ? ` · Size: ${selectedItem.size}`
+                      : ""}
+                  </p>
+
+                  <p className="mt-1 text-xs font-semibold text-red-500">
+                    {formatPrice(
+                      selectedItem?.totalPrice ??
+                        Number(
+                          selectedItem?.price ||
+                            0
+                        ) *
+                          Number(
+                            selectedItem?.quantity ||
+                              0
+                          )
+                    )}
+                  </p>
+
+                </div>
+
+              </div>
 
             </div>
 
             <div className="mt-6">
 
               <label
-                htmlFor="cancellationReason"
+                htmlFor="itemCancellationReason"
                 className="text-[10px] uppercase tracking-[0.2em] text-gray-400"
               >
                 CANCELLATION REASON
               </label>
 
               <textarea
-                id="cancellationReason"
-                value={cancellationReason}
+                id="itemCancellationReason"
+                value={
+                  itemCancellationReason
+                }
                 onChange={(event) => {
-                  setCancellationReason(
+                  setItemCancellationReason(
                     event.target.value
                   );
 
-                  if (cancelError) {
-                    setCancelError("");
+                  if (itemCancelError) {
+                    setItemCancelError("");
                   }
                 }}
-                placeholder="Enter your reason..."
+                placeholder="Tell us why you want to cancel this item..."
                 rows={4}
-                disabled={cancelLoading}
+                disabled={
+                  itemCancelLoading
+                }
                 className="mt-3 w-full resize-none border border-white/15 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-gray-700 focus:border-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               />
 
-              {cancelError && (
+              {itemCancelError && (
                 <p className="mt-2 text-xs text-red-500">
-                  {cancelError}
+                  {itemCancelError}
                 </p>
               )}
 
+              <p className="mt-3 text-[9px] uppercase leading-5 tracking-[0.1em] text-gray-600">
+                If the order was paid online, the eligible refund will be added to your GETSUKA wallet.
+              </p>
+
             </div>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
 
               <button
                 type="button"
                 onClick={
-                  handleCloseCancelModal
+                  handleCloseItemCancelModal
                 }
-                disabled={cancelLoading}
+                disabled={
+                  itemCancelLoading
+                }
                 className="flex-1 border border-white/20 px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-white transition hover:border-white/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                KEEP ORDER
+                KEEP ITEM
               </button>
 
               <button
                 type="button"
                 onClick={
-                  handleCancelOrder
+                  handleCancelItem
                 }
-                disabled={cancelLoading}
+                disabled={
+                  itemCancelLoading
+                }
                 className="flex-1 bg-red-600 px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {cancelLoading
+                {itemCancelLoading
                   ? "CANCELLING..."
-                  : "CANCEL ORDER"}
+                  : "CANCEL ITEM"}
               </button>
 
             </div>
@@ -2328,7 +2848,9 @@ const OrderDetailsPage = () => {
                 onClick={
                   handleCloseReturnModal
                 }
-                disabled={returnLoading}
+                disabled={
+                  returnLoading
+                }
                 className="flex-1 border border-white/20 px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-white transition hover:border-white/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 KEEP ORDER
@@ -2339,7 +2861,9 @@ const OrderDetailsPage = () => {
                 onClick={
                   handleReturnOrder
                 }
-                disabled={returnLoading}
+                disabled={
+                  returnLoading
+                }
                 className="flex-1 bg-red-600 px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {returnLoading

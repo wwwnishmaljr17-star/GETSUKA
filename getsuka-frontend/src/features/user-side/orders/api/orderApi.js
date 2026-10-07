@@ -4,12 +4,15 @@ import axiosInstance from "../../../../lib/axios";
 // CREATE ORDER
 // =========================================================
 
-export const createOrder = async (orderData) => {
+export const createOrder = async (
+  orderData
+) => {
   try {
-    const response = await axiosInstance.post(
-      "/api/user/orders",
-      orderData
-    );
+    const response =
+      await axiosInstance.post(
+        "/api/user/orders",
+        orderData
+      );
 
     return response.data;
   } catch (error) {
@@ -28,9 +31,10 @@ export const createOrder = async (orderData) => {
 
 export const getUserOrders = async () => {
   try {
-    const response = await axiosInstance.get(
-      "/api/user/orders"
-    );
+    const response =
+      await axiosInstance.get(
+        "/api/user/orders"
+      );
 
     return response.data;
   } catch (error) {
@@ -47,11 +51,14 @@ export const getUserOrders = async () => {
 // GET SINGLE USER ORDER
 // =========================================================
 
-export const getUserOrderById = async (orderId) => {
+export const getUserOrderById = async (
+  orderId
+) => {
   try {
-    const response = await axiosInstance.get(
-      `/api/user/orders/${orderId}`
-    );
+    const response =
+      await axiosInstance.get(
+        `/api/user/orders/${orderId}`
+      );
 
     return response.data;
   } catch (error) {
@@ -73,17 +80,47 @@ export const cancelUserOrder = async (
   cancellationReason
 ) => {
   try {
-    const response = await axiosInstance.post(
-      `/api/user/orders/${orderId}/cancel`,
-      {
-        cancellationReason,
-      }
-    );
+    const response =
+      await axiosInstance.post(
+        `/api/user/orders/${orderId}/cancel`,
+        {
+          cancellationReason,
+        }
+      );
 
     return response.data;
   } catch (error) {
     console.error(
       "Cancel User Order Error:",
+      error
+    );
+
+    throw error;
+  }
+};
+
+// =========================================================
+// CANCEL SINGLE ORDER ITEM
+// =========================================================
+
+export const cancelUserOrderItem = async (
+  orderId,
+  itemId,
+  cancellationReason
+) => {
+  try {
+    const response =
+      await axiosInstance.post(
+        `/api/user/orders/${orderId}/items/${itemId}/cancel`,
+        {
+          cancellationReason,
+        }
+      );
+
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Cancel User Order Item Error:",
       error
     );
 
@@ -100,12 +137,13 @@ export const returnUserOrder = async (
   returnReason
 ) => {
   try {
-    const response = await axiosInstance.post(
-      `/api/user/orders/${orderId}/return`,
-      {
-        returnReason,
-      }
-    );
+    const response =
+      await axiosInstance.post(
+        `/api/user/orders/${orderId}/return`,
+        {
+          returnReason,
+        }
+      );
 
     return response.data;
   } catch (error) {

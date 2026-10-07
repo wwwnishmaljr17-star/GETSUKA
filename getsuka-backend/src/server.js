@@ -24,6 +24,12 @@ import wishlistRoutes from "./features/wishlist/routes/wishlistRoutes.js";
 import orderRoutes from "./features/order/routes/orderRoutes.js";
 import adminOrderRoutes from "./features/order/routes/adminOrderRoutes.js";
 
+import paymentRoutes from "./features/payment/routes/paymentRoutes.js";
+
+import couponRoutes from "./features/coupon/routes/couponRoutes.js";
+
+import walletRoutes from "./features/wallet/routes/walletRoutes.js";
+
 import connectDB from "./config/db.js";
 
 import publicProductRoutes from "./features/product/routes/publicProductRoutes.js";
@@ -110,6 +116,15 @@ app.use(
 );
 
 // =========================================================
+// ADMIN COUPON ROUTES
+// =========================================================
+
+app.use(
+  "/api/admin/coupons",
+  couponRoutes
+);
+
+// =========================================================
 // PUBLIC PRODUCT ROUTES
 // =========================================================
 
@@ -164,6 +179,24 @@ app.use(
 );
 
 // =========================================================
+// PAYMENT ROUTES
+// =========================================================
+
+app.use(
+  "/api/payment",
+  paymentRoutes
+);
+
+// =========================================================
+// WALLET ROUTES
+// =========================================================
+
+app.use(
+  "/api/user/wallet",
+  walletRoutes
+);
+
+// =========================================================
 // HEALTH CHECK
 // =========================================================
 
@@ -207,7 +240,7 @@ const createDefaultCategory = async () => {
       );
     } else {
       console.log(
-        'Default category "T-Shirts" already exists'
+        ''
       );
     }
   } catch (error) {

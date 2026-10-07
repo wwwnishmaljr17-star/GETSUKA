@@ -522,6 +522,8 @@ export const loginUser = async (req, res) => {
       });
     }
 
+   
+
     // Create JWT token
     const token = jwt.sign(
       {

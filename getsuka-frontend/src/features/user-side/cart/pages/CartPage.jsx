@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import productApi from "../../products/api/productApi";
 
 const CART_KEY = "getsukaCart";
+const MAX_CART_QUANTITY = 5;
 
 const CartPage = () => {
   const navigate = useNavigate();
@@ -12,24 +13,19 @@ const CartPage = () => {
   const [relatedProducts, setRelatedProducts] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const [stockSyncing, setStockSyncing] = useState(false);
   const [relatedLoading, setRelatedLoading] = useState(true);
 
   const [coupon, setCoupon] = useState("");
 
-  /* =========================================================
-     CUSTOM UI STATES
-  ========================================================= */
+  const [notification, setNotification] = useState(null);
 
-  const [notification, setNotification] =
-    useState(null);
-
-  const [confirmModal, setConfirmModal] =
-    useState({
-      open: false,
-      type: "",
-      index: null,
-      itemName: "",
-    });
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    type: "",
+    index: null,
+    itemName: "",
+  });
 
   /* =========================================================
      LOAD CART
@@ -41,27 +37,423 @@ const CartPage = () => {
 
   const loadCart = () => {
     try {
-      const savedCart =
-        localStorage.getItem(CART_KEY);
+      const savedCart = localStorage.getItem(CART_KEY);
 
       const parsedCart = savedCart
         ? JSON.parse(savedCart)
         : [];
 
-      setCartItems(
-        Array.isArray(parsedCart)
-          ? parsedCart
-          : []
-      );
-    } catch (error) {
-      console.error(
-        "CART LOAD ERROR:",
-        error
-      );
+      const items = Array.isArray(parsedCart)
+        ? parsedCart
+        : [];
 
+      setCartItems(items);
+
+      if (items.length > 0) {
+        syncCartStock(items);
+      }
+    } catch (error) {
+      console.error("CART LOAD ERROR:", error);
       setCartItems([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /* =========================================================
+     NORMALIZE VALUE
+  ========================================================= */
+
+  const normalizeValue = (value) => {
+    if (
+      value === undefined ||
+      value === null
+    ) {
+      return "";
+    }
+
+    return String(value)
+      .trim()
+      .toLowerCase();
+  };
+
+  /* =========================================================
+     FIND CURRENT VARIANT
+     
+     Priority:
+     1. Variant ID
+     2. SKU
+     3. Size + Color
+  ========================================================= */
+
+  const findMatchingVariant = (
+    variants,
+    item
+  ) => {
+    if (!Array.isArray(variants) || !item) {
+      return null;
+    }
+
+    /* -------------------------------------------------------
+       1. EXACT VARIANT ID
+    ------------------------------------------------------- */
+
+    if (item.variantId) {
+      const byId = variants.find(
+        (variant) =>
+          String(variant?._id) ===
+          String(item.variantId)
+      );
+
+      if (byId) {
+        return byId;
+      }
+    }
+
+    /* -------------------------------------------------------
+       2. SKU
+    ------------------------------------------------------- */
+
+    if (item.sku) {
+      const itemSku = normalizeValue(
+        item.sku
+      );
+
+      const bySku = variants.find(
+        (variant) =>
+          normalizeValue(
+            variant?.sku
+          ) === itemSku
+      );
+
+      if (bySku) {
+        return bySku;
+      }
+    }
+
+    /* -------------------------------------------------------
+       3. SIZE + COLOR
+    ------------------------------------------------------- */
+
+    const itemSize = normalizeValue(
+      item.size
+    );
+
+    const itemColor = normalizeValue(
+      item.color
+    );
+
+    if (itemSize && itemColor) {
+      const bySizeAndColor =
+        variants.find(
+          (variant) =>
+            normalizeValue(
+              variant?.size
+            ) === itemSize &&
+            normalizeValue(
+              variant?.color
+            ) === itemColor
+        );
+
+      if (bySizeAndColor) {
+        return bySizeAndColor;
+      }
+    }
+
+    return null;
+  };
+
+  /* =========================================================
+     CREATE SYNCED ITEM
+  ========================================================= */
+
+  const createSyncedItem = (
+    item,
+    product,
+    selectedVariant
+  ) => {
+    const currentStock = Math.max(
+      0,
+      Number(
+        selectedVariant?.stock || 0
+      )
+    );
+
+    const currentQuantity = Math.max(
+      1,
+      Number(item?.quantity || 1)
+    );
+
+    const correctedQuantity =
+      currentStock > 0
+        ? Math.min(
+            currentQuantity,
+            currentStock,
+            MAX_CART_QUANTITY
+          )
+        : currentQuantity;
+
+    return {
+      ...item,
+
+      productId:
+        item.productId ||
+        product?._id,
+
+      name:
+        product?.name ??
+        item.name,
+
+      anime:
+        product?.anime ??
+        item.anime,
+
+      image:
+        item.image ||
+        product?.images?.[0] ||
+        "",
+
+      price:
+        product?.salePrice !== null &&
+        product?.salePrice !==
+          undefined
+          ? Number(
+              product.salePrice
+            )
+          : Number(
+              product?.price ??
+                item.price ??
+                0
+            ),
+
+      variantId:
+        selectedVariant?._id ??
+        item.variantId,
+
+      color:
+        selectedVariant?.color ??
+        item.color,
+
+      size:
+        selectedVariant?.size ??
+        item.size,
+
+      sku:
+        selectedVariant?.sku ??
+        item.sku,
+
+      maxStock:
+        currentStock,
+
+      quantity:
+        correctedQuantity,
+
+      isAvailable:
+        currentStock > 0,
+
+      available:
+        currentStock > 0,
+
+      isOutOfStock:
+        currentStock <= 0,
+
+      stockSyncFailed:
+        false,
+    };
+  };
+
+  /* =========================================================
+     LIVE STOCK SYNCHRONIZATION
+  ========================================================= */
+
+  const syncCartStock = async (
+    items
+  ) => {
+    if (
+      !Array.isArray(items) ||
+      items.length === 0
+    ) {
+      return;
+    }
+
+    setStockSyncing(true);
+
+    try {
+      const syncedItems =
+        await Promise.all(
+          items.map(
+            async (item) => {
+              try {
+                if (
+                  !item?.productId
+                ) {
+                  return {
+                    ...item,
+                    isAvailable:
+                      false,
+                    available:
+                      false,
+                    isOutOfStock:
+                      true,
+                    maxStock: 0,
+                  };
+                }
+
+                const response =
+                  await productApi.getProductById(
+                    item.productId
+                  );
+
+                const product =
+                  response?.product;
+
+                if (!product) {
+                  return {
+                    ...item,
+                    isAvailable:
+                      false,
+                    available:
+                      false,
+                    isOutOfStock:
+                      true,
+                    maxStock: 0,
+                  };
+                }
+
+                const variants =
+                  Array.isArray(
+                    product.variants
+                  )
+                    ? product.variants
+                    : [];
+
+                const selectedVariant =
+                  findMatchingVariant(
+                    variants,
+                    item
+                  );
+
+                if (
+                  !selectedVariant
+                ) {
+                  return {
+                    ...item,
+                    isAvailable:
+                      false,
+                    available:
+                      false,
+                    isOutOfStock:
+                      true,
+                    maxStock: 0,
+                    stockSyncFailed:
+                      false,
+                  };
+                }
+
+                return createSyncedItem(
+                  item,
+                  product,
+                  selectedVariant
+                );
+              } catch (error) {
+                console.error(
+                  `STOCK SYNC ERROR FOR PRODUCT ${item?.productId}:`,
+                  error
+                );
+
+                /*
+                  Network/API failure is NOT treated as
+                  genuine "out of stock".
+
+                  Keep the existing item state but mark
+                  verification as failed.
+                */
+
+                return {
+                  ...item,
+                  stockSyncFailed:
+                    true,
+                };
+              }
+            }
+          )
+        );
+
+      setCartItems(
+        syncedItems
+      );
+
+      localStorage.setItem(
+        CART_KEY,
+        JSON.stringify(
+          syncedItems
+        )
+      );
+
+      window.dispatchEvent(
+        new Event("cartUpdated")
+      );
+
+      const stockChanged =
+        syncedItems.some(
+          (item, index) => {
+            const oldItem =
+              items[index];
+
+            return (
+              Number(
+                oldItem?.maxStock ??
+                  -1
+              ) !==
+                Number(
+                  item?.maxStock ??
+                    -1
+                ) ||
+              Number(
+                oldItem?.quantity ??
+                  0
+              ) !==
+                Number(
+                  item?.quantity ??
+                    0
+                ) ||
+              Boolean(
+                oldItem?.isAvailable
+              ) !==
+                Boolean(
+                  item?.isAvailable
+                )
+            );
+          }
+        );
+
+      const nowUnavailable =
+        syncedItems.some(
+          (item) =>
+            item?.isOutOfStock ===
+              true ||
+            Number(
+              item?.maxStock ?? 0
+            ) <= 0
+        );
+
+      if (
+        stockChanged &&
+        nowUnavailable
+      ) {
+        showNotification(
+          "STOCK UPDATED",
+          "One or more products in your cart are no longer available in the requested quantity.",
+          "error"
+        );
+      }
+    } catch (error) {
+      console.error(
+        "CART STOCK SYNC ERROR:",
+        error
+      );
+    } finally {
+      setStockSyncing(false);
     }
   };
 
@@ -89,7 +481,9 @@ const CartPage = () => {
      SAVE CART
   ========================================================= */
 
-  const saveCart = (items) => {
+  const saveCart = (
+    items
+  ) => {
     setCartItems(items);
 
     localStorage.setItem(
@@ -110,10 +504,98 @@ const CartPage = () => {
     return cartItems.reduce(
       (total, item) =>
         total +
-        Number(item.quantity || 0),
+        Number(
+          item.quantity || 0
+        ),
       0
     );
   }, [cartItems]);
+
+  /* =========================================================
+     CHECK ITEM AVAILABILITY
+  ========================================================= */
+
+  const isCartItemUnavailable =
+    (item) => {
+      if (!item) {
+        return true;
+      }
+
+      /*
+        If stock synchronization is currently
+        being performed, don't permanently
+        trust an old false flag.
+      */
+
+      if (
+        item.stockSyncFailed ===
+        true
+      ) {
+        return true;
+      }
+
+      if (
+        item.isAvailable ===
+          false ||
+        item.available ===
+          false ||
+        item.isOutOfStock ===
+          true
+      ) {
+        return true;
+      }
+
+      const maxStock =
+        item.maxStock !==
+          undefined &&
+        item.maxStock !==
+          null
+          ? Number(
+              item.maxStock
+            )
+          : 0;
+
+      if (
+        maxStock <= 0
+      ) {
+        return true;
+      }
+
+      if (
+        Number(
+          item.quantity || 0
+        ) >
+        maxStock
+      ) {
+        return true;
+      }
+
+      return false;
+    };
+
+  /* =========================================================
+     UNAVAILABLE ITEMS
+  ========================================================= */
+
+  const unavailableCartItems =
+    useMemo(() => {
+      return cartItems.filter(
+        (item) =>
+          isCartItemUnavailable(
+            item
+          )
+      );
+    }, [cartItems]);
+
+  /* =========================================================
+     CHECKOUT AVAILABILITY
+  ========================================================= */
+
+  const canProceedToCheckout =
+    cartItems.length > 0 &&
+    !stockSyncing &&
+    unavailableCartItems.length ===
+      0;
 
   /* =========================================================
      SUBTOTAL
@@ -123,8 +605,12 @@ const CartPage = () => {
     return cartItems.reduce(
       (total, item) =>
         total +
-        Number(item.price || 0) *
-          Number(item.quantity || 0),
+        Number(
+          item.price || 0
+        ) *
+          Number(
+            item.quantity || 0
+          ),
       0
     );
   }, [cartItems]);
@@ -139,224 +625,565 @@ const CartPage = () => {
      TOTAL
   ========================================================= */
 
-  const total = subtotal + shipping;
+  const total =
+    subtotal + shipping;
 
   /* =========================================================
      FORMAT PRICE
   ========================================================= */
 
-  const formatPrice = (price) => {
+  const formatPrice = (
+    price
+  ) => {
     return `₹${Number(
       price || 0
-    ).toLocaleString("en-IN")}`;
+    ).toLocaleString(
+      "en-IN"
+    )}`;
   };
 
   /* =========================================================
      INCREASE QUANTITY
+     LIVE STOCK CHECK
   ========================================================= */
 
-  const increaseQuantity = (index) => {
-    const updatedCart = [
-      ...cartItems,
-    ];
+  const increaseQuantity =
+    async (index) => {
+      const item =
+        cartItems[index];
 
-    const item =
-      updatedCart[index];
+      if (!item) {
+        return;
+      }
 
-    const currentQuantity =
-      Number(item.quantity || 0);
+      try {
+        if (
+          !item.productId
+        ) {
+          showNotification(
+            "PRODUCT UNAVAILABLE",
+            "This product could not be verified.",
+            "error"
+          );
 
-    const maxStock =
-      Number(
-        item.maxStock ?? 0
-      );
+          return;
+        }
 
-    if (
-      maxStock > 0 &&
-      currentQuantity >=
-        maxStock
-    ) {
-      showNotification(
-        "STOCK LIMIT REACHED",
-        `Only ${maxStock} item${
-          maxStock > 1
-            ? "s"
-            : ""
-        } available for this variant.`,
-        "error"
-      );
+        const response =
+          await productApi.getProductById(
+            item.productId
+          );
 
-      return;
-    }
+        const product =
+          response?.product;
 
-    updatedCart[index] = {
-      ...item,
-      quantity:
-        currentQuantity + 1,
+        const variants =
+          Array.isArray(
+            product?.variants
+          )
+            ? product.variants
+            : [];
+
+        const selectedVariant =
+          findMatchingVariant(
+            variants,
+            item
+          );
+
+        if (
+          !selectedVariant
+        ) {
+          const updatedCart =
+            [...cartItems];
+
+          updatedCart[index] = {
+            ...item,
+            maxStock: 0,
+            isAvailable:
+              false,
+            available:
+              false,
+            isOutOfStock:
+              true,
+          };
+
+          saveCart(
+            updatedCart
+          );
+
+          showNotification(
+            "OUT OF STOCK",
+            "This selected variant is no longer available.",
+            "error"
+          );
+
+          return;
+        }
+
+        const currentStock =
+          Math.max(
+            0,
+            Number(
+              selectedVariant.stock ||
+                0
+            )
+          );
+
+        const currentQuantity =
+          Number(
+            item.quantity || 1
+          );
+
+        const updatedItem =
+          createSyncedItem(
+            item,
+            product,
+            selectedVariant
+          );
+
+        if (
+          currentStock <= 0
+        ) {
+          const updatedCart =
+            [...cartItems];
+
+          updatedCart[index] = {
+            ...updatedItem,
+            quantity:
+              currentQuantity,
+          };
+
+          saveCart(
+            updatedCart
+          );
+
+          showNotification(
+            "OUT OF STOCK",
+            "This selected variant is currently out of stock.",
+            "error"
+          );
+
+          return;
+        }
+
+        if (
+          currentQuantity >=
+          MAX_CART_QUANTITY
+        ) {
+          const updatedCart =
+            [...cartItems];
+
+          updatedCart[index] = {
+            ...updatedItem,
+            quantity:
+              MAX_CART_QUANTITY,
+          };
+
+          saveCart(
+            updatedCart
+          );
+
+          showNotification(
+            "MAXIMUM QUANTITY REACHED",
+            `You can add a maximum of ${MAX_CART_QUANTITY} items of the same variant to your cart.`,
+            "error"
+          );
+
+          return;
+        }
+
+        if (
+          currentQuantity >=
+          currentStock
+        ) {
+          const updatedCart =
+            [...cartItems];
+
+          updatedCart[index] = {
+            ...updatedItem,
+            quantity:
+              currentStock,
+          };
+
+          saveCart(
+            updatedCart
+          );
+
+          showNotification(
+            "STOCK LIMIT REACHED",
+            `Only ${currentStock} item${
+              currentStock > 1
+                ? "s"
+                : ""
+            } available for this variant.`,
+            "error"
+          );
+
+          return;
+        }
+
+        const updatedCart =
+          [...cartItems];
+
+        updatedCart[index] = {
+          ...updatedItem,
+          quantity:
+            currentQuantity +
+            1,
+        };
+
+        saveCart(
+          updatedCart
+        );
+      } catch (error) {
+        console.error(
+          "INCREASE QUANTITY STOCK CHECK ERROR:",
+          error
+        );
+
+        showNotification(
+          "STOCK CHECK FAILED",
+          "Unable to verify the latest stock. Please try again.",
+          "error"
+        );
+      }
     };
-
-    saveCart(updatedCart);
-  };
 
   /* =========================================================
      DECREASE QUANTITY
   ========================================================= */
 
-  const decreaseQuantity = (index) => {
-    const updatedCart = [
-      ...cartItems,
-    ];
+  const decreaseQuantity =
+    (index) => {
+      const updatedCart =
+        [...cartItems];
 
-    const item =
-      updatedCart[index];
+      const item =
+        updatedCart[index];
 
-    const currentQuantity =
-      Number(item.quantity || 1);
+      if (!item) {
+        return;
+      }
 
-    if (currentQuantity <= 1) {
-      return;
-    }
+      const currentQuantity =
+        Number(
+          item.quantity || 1
+        );
 
-    updatedCart[index] = {
-      ...item,
-      quantity:
-        currentQuantity - 1,
+      if (
+        currentQuantity <=
+        1
+      ) {
+        return;
+      }
+
+      updatedCart[index] = {
+        ...item,
+        quantity:
+          currentQuantity -
+          1,
+      };
+
+      saveCart(
+        updatedCart
+      );
     };
-
-    saveCart(updatedCart);
-  };
 
   /* =========================================================
      REMOVE MODAL
   ========================================================= */
 
-  const openRemoveModal = (index) => {
-    const item =
-      cartItems[index];
+  const openRemoveModal =
+    (index) => {
+      const item =
+        cartItems[index];
 
-    setConfirmModal({
-      open: true,
-      type: "remove",
-      index,
-      itemName:
-        item?.name ||
-        "this product",
-    });
-  };
+      setConfirmModal({
+        open: true,
+        type: "remove",
+        index,
+        itemName:
+          item?.name ||
+          "this product",
+      });
+    };
 
   /* =========================================================
      CLEAR CART MODAL
   ========================================================= */
 
-  const openClearCartModal = () => {
-    if (
-      cartItems.length === 0
-    ) {
-      return;
-    }
+  const openClearCartModal =
+    () => {
+      if (
+        cartItems.length ===
+        0
+      ) {
+        return;
+      }
 
-    setConfirmModal({
-      open: true,
-      type: "clear",
-      index: null,
-      itemName: "",
-    });
-  };
+      setConfirmModal({
+        open: true,
+        type: "clear",
+        index: null,
+        itemName: "",
+      });
+    };
 
   /* =========================================================
      CLOSE MODAL
   ========================================================= */
 
-  const closeConfirmModal = () => {
-    setConfirmModal({
-      open: false,
-      type: "",
-      index: null,
-      itemName: "",
-    });
-  };
+  const closeConfirmModal =
+    () => {
+      setConfirmModal({
+        open: false,
+        type: "",
+        index: null,
+        itemName: "",
+      });
+    };
 
   /* =========================================================
      CONFIRM ACTION
   ========================================================= */
 
-  const confirmAction = () => {
-    if (
-      confirmModal.type ===
-      "remove"
-    ) {
-      const index =
-        confirmModal.index;
+  const confirmAction =
+    () => {
+      if (
+        confirmModal.type ===
+        "remove"
+      ) {
+        const index =
+          confirmModal.index;
 
-      const item =
-        cartItems[index];
+        const item =
+          cartItems[index];
 
-      const updatedCart =
-        cartItems.filter(
-          (_, itemIndex) =>
-            itemIndex !== index
+        const updatedCart =
+          cartItems.filter(
+            (_, itemIndex) =>
+              itemIndex !==
+              index
+          );
+
+        saveCart(
+          updatedCart
         );
 
-      saveCart(updatedCart);
+        showNotification(
+          "REMOVED FROM CART",
+          `${
+            item?.name ||
+            "Item"
+          } has been removed from your cart.`,
+          "success"
+        );
+      }
 
-      showNotification(
-        "REMOVED FROM CART",
-        `${item?.name || "Item"} has been removed from your cart.`,
-        "success"
-      );
-    }
+      if (
+        confirmModal.type ===
+        "clear"
+      ) {
+        saveCart([]);
 
-    if (
-      confirmModal.type ===
-      "clear"
-    ) {
-      saveCart([]);
+        showNotification(
+          "CART CLEARED",
+          "All products have been removed from your cart.",
+          "success"
+        );
+      }
 
-      showNotification(
-        "CART CLEARED",
-        "All products have been removed from your cart.",
-        "success"
-      );
-    }
-
-    closeConfirmModal();
-  };
+      closeConfirmModal();
+    };
 
   /* =========================================================
      COUPON
   ========================================================= */
 
-  const applyCoupon = () => {
-    if (!coupon.trim()) {
+  const applyCoupon =
+    () => {
+      if (
+        !coupon.trim()
+      ) {
+        showNotification(
+          "COUPON CODE REQUIRED",
+          "Enter a coupon code before applying.",
+          "error"
+        );
+
+        return;
+      }
+
       showNotification(
-        "COUPON CODE REQUIRED",
-        "Enter a coupon code before applying.",
-        "error"
+        "COUPONS ARE AVAILABLE AT CHECKOUT",
+        "Apply your GETSUKA coupon during checkout.",
+        "info"
       );
-
-      return;
-    }
-
-    showNotification(
-      "COUPON SYSTEM",
-      "Coupon validation will be connected when the coupon system is implemented.",
-      "info"
-    );
-  };
+    };
 
   /* =========================================================
      CHECKOUT
+     FINAL LIVE STOCK VALIDATION
   ========================================================= */
 
-  const handleCheckout = () => {
-    if (
-      cartItems.length === 0
-    ) {
-      return;
-    }
+  const handleCheckout =
+    async () => {
+      if (
+        cartItems.length ===
+        0
+      ) {
+        return;
+      }
 
-    navigate("/checkout");
-  };
+      setStockSyncing(true);
+
+      try {
+        const latestItems =
+          await Promise.all(
+            cartItems.map(
+              async (item) => {
+                try {
+                  const response =
+                    await productApi.getProductById(
+                      item.productId
+                    );
+
+                  const product =
+                    response?.product;
+
+                  if (!product) {
+                    return {
+                      ...item,
+                      maxStock: 0,
+                      isAvailable:
+                        false,
+                      available:
+                        false,
+                      isOutOfStock:
+                        true,
+                    };
+                  }
+
+                  const variants =
+                    Array.isArray(
+                      product.variants
+                    )
+                      ? product.variants
+                      : [];
+
+                  const variant =
+                    findMatchingVariant(
+                      variants,
+                      item
+                    );
+
+                  if (!variant) {
+                    return {
+                      ...item,
+                      maxStock: 0,
+                      isAvailable:
+                        false,
+                      available:
+                        false,
+                      isOutOfStock:
+                        true,
+                    };
+                  }
+
+                  return createSyncedItem(
+                    item,
+                    product,
+                    variant
+                  );
+                } catch (error) {
+                  console.error(
+                    "FINAL STOCK CHECK ERROR:",
+                    error
+                  );
+
+                  return {
+                    ...item,
+                    stockSyncFailed:
+                      true,
+                  };
+                }
+              }
+            )
+          );
+
+        setCartItems(
+          latestItems
+        );
+
+        localStorage.setItem(
+          CART_KEY,
+          JSON.stringify(
+            latestItems
+          )
+        );
+
+        window.dispatchEvent(
+          new Event(
+            "cartUpdated"
+          )
+        );
+
+        const invalidItems =
+          latestItems.filter(
+            (item) =>
+              item?.stockSyncFailed ===
+                true ||
+              Number(
+                item?.maxStock ||
+                  0
+              ) <= 0 ||
+              Number(
+                item?.quantity ||
+                  0
+              ) >
+                Number(
+                  item?.maxStock ||
+                    0
+                ) ||
+              item?.isAvailable ===
+                false ||
+              item?.isOutOfStock ===
+                true
+          );
+
+        if (
+          invalidItems.length >
+          0
+        ) {
+          showNotification(
+            "CHECKOUT UNAVAILABLE",
+            "Stock changed for one or more products. Please review your cart before continuing.",
+            "error"
+          );
+
+          return;
+        }
+
+        navigate(
+          "/checkout"
+        );
+      } catch (error) {
+        console.error(
+          "CHECKOUT STOCK VALIDATION ERROR:",
+          error
+        );
+
+        showNotification(
+          "CHECKOUT UNAVAILABLE",
+          "Unable to verify product availability. Please try again.",
+          "error"
+        );
+      } finally {
+        setStockSyncing(
+          false
+        );
+      }
+    };
 
   /* =========================================================
      LOAD RELATED PRODUCTS
@@ -366,7 +1193,9 @@ const CartPage = () => {
     const loadRelatedProducts =
       async () => {
         try {
-          setRelatedLoading(true);
+          setRelatedLoading(
+            true
+          );
 
           const response =
             await productApi.getProducts(
@@ -409,9 +1238,13 @@ const CartPage = () => {
             error
           );
 
-          setRelatedProducts([]);
+          setRelatedProducts(
+            []
+          );
         } finally {
-          setRelatedLoading(false);
+          setRelatedLoading(
+            false
+          );
         }
       };
 
@@ -422,18 +1255,17 @@ const CartPage = () => {
      OPEN PRODUCT
   ========================================================= */
 
-  const openProduct = (
-    productId
-  ) => {
-    navigate(
-      `/products/${productId}`
-    );
+  const openProduct =
+    (productId) => {
+      navigate(
+        `/products/${productId}`
+      );
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  };
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    };
 
   /* =========================================================
      LOADING
@@ -441,18 +1273,14 @@ const CartPage = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-black">
-
+      <div className="flex min-h-screen items-center justify-center bg-black text-white">
         <div className="text-center">
-
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-[2px] border-[#e5e5e5] border-t-black" />
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-[2px] border-[#333] border-t-[#e9002d]" />
 
           <p className="mt-5 text-[9px] font-bold uppercase tracking-[0.25em] text-[#777]">
             Loading your cart
           </p>
-
         </div>
-
       </div>
     );
   }
@@ -462,51 +1290,37 @@ const CartPage = () => {
   ========================================================= */
 
   if (
-    cartItems.length === 0
+    cartItems.length ===
+    0
   ) {
     return (
-      <div className="min-h-screen bg-white text-black">
-
+      <div className="min-h-screen bg-black text-white">
         <main className="mx-auto max-w-[1440px] px-5 pb-20 pt-12 md:px-10 lg:px-14 lg:pt-16">
-
-          {/* HEADER */}
-
-          <div className="flex items-end justify-between border-b border-black pb-7">
-
+          <div className="flex items-end justify-between border-b border-[#222] pb-7">
             <div>
-
-              <p className="text-[9px] font-bold uppercase tracking-[0.35em] text-[#999]">
+              <p className="text-[9px] font-bold uppercase tracking-[0.35em] text-[#777]">
                 GETSUKA / SHOPPING
               </p>
 
               <h1 className="mt-4 text-4xl font-black uppercase tracking-[-0.06em] md:text-6xl">
                 YOUR CART
               </h1>
-
             </div>
 
             <p className="pb-1 text-[9px] font-bold uppercase tracking-[0.18em] text-[#777]">
               00 ITEMS
             </p>
-
           </div>
 
-          {/* EMPTY */}
-
           <div className="relative flex min-h-[560px] flex-col items-center justify-center overflow-hidden text-center">
-
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-
-              <span className="select-none text-[180px] font-black tracking-[-0.12em] text-[#f5f5f5] md:text-[280px]">
+              <span className="select-none text-[180px] font-black tracking-[-0.12em] text-white/[0.025] md:text-[280px]">
                 00
               </span>
-
             </div>
 
             <div className="relative z-10">
-
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-[#ddd]">
-
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-[#333]">
                 <svg
                   width="30"
                   height="30"
@@ -518,7 +1332,6 @@ const CartPage = () => {
                   <path d="M6 7h12l1 13H5L6 7Z" />
                   <path d="M9 7a3 3 0 0 1 6 0" />
                 </svg>
-
               </div>
 
               <p className="mt-8 text-[9px] font-bold uppercase tracking-[0.3em] text-[#e9002d]">
@@ -530,33 +1343,31 @@ const CartPage = () => {
               </h2>
 
               <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-[#777]">
-                Your next anime fit is waiting.
-                Explore the GETSUKA collection
-                and find something worthy of
+                Your next anime fit is
+                waiting. Explore the
+                GETSUKA collection and
+                find something worthy of
                 your wardrobe.
               </p>
 
               <button
                 type="button"
                 onClick={() =>
-                  navigate("/shop")
+                  navigate(
+                    "/shop"
+                  )
                 }
-                className="group mt-9 inline-flex items-center gap-5 bg-black px-8 py-4 text-[9px] font-bold uppercase tracking-[0.2em] text-white transition hover:bg-[#e9002d]"
+                className="group mt-9 inline-flex items-center gap-5 bg-[#e9002d] px-8 py-4 text-[9px] font-bold uppercase tracking-[0.2em] text-white transition hover:bg-white hover:text-black"
               >
                 CONTINUE SHOPPING
 
                 <span className="transition-transform group-hover:translate-x-2">
                   →
                 </span>
-
               </button>
-
             </div>
-
           </div>
-
         </main>
-
       </div>
     );
   }
@@ -566,29 +1377,26 @@ const CartPage = () => {
   ========================================================= */
 
   return (
-    <div className="min-h-screen bg-white text-black">
+    <div className="min-h-screen bg-black text-white">
 
       {/* =====================================================
-          TOP NOTIFICATION
+          NOTIFICATION
       ===================================================== */}
 
       {notification && (
         <div className="fixed right-5 top-5 z-[100] w-[380px] max-w-[calc(100vw-40px)]">
-
           <div
-            className={`border bg-black p-5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.2)] ${
+            className={`border bg-[#080808] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] ${
               notification.type ===
               "error"
                 ? "border-[#e9002d]"
                 : notification.type ===
                   "info"
-                ? "border-[#555]"
-                : "border-[#222]"
+                ? "border-[#444]"
+                : "border-[#333]"
             }`}
           >
-
             <div className="flex gap-4">
-
               <div
                 className={`flex h-10 w-10 shrink-0 items-center justify-center border ${
                   notification.type ===
@@ -597,7 +1405,6 @@ const CartPage = () => {
                     : "border-[#444] text-white"
                 }`}
               >
-
                 {notification.type ===
                 "error" ? (
                   <span className="text-sm font-bold">
@@ -608,21 +1415,16 @@ const CartPage = () => {
                     ✓
                   </span>
                 )}
-
               </div>
 
               <div className="min-w-0 flex-1">
-
                 <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#e9002d]">
                   {notification.title}
                 </p>
 
-                <p className="mt-2 text-xs leading-5 text-[#bbb]">
-                  {
-                    notification.message
-                  }
+                <p className="mt-2 text-xs leading-5 text-[#aaa]">
+                  {notification.message}
                 </p>
-
               </div>
 
               <button
@@ -636,11 +1438,8 @@ const CartPage = () => {
               >
                 ×
               </button>
-
             </div>
-
           </div>
-
         </div>
       )}
 
@@ -649,14 +1448,10 @@ const CartPage = () => {
       ===================================================== */}
 
       {confirmModal.open && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-5 backdrop-blur-sm">
-
-          <div className="w-full max-w-[430px] border border-[#222] bg-white p-7 shadow-[0_30px_100px_rgba(0,0,0,0.35)] md:p-9">
-
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 px-5 backdrop-blur-sm">
+          <div className="w-full max-w-[430px] border border-[#333] bg-[#0b0b0b] p-7 shadow-[0_30px_100px_rgba(0,0,0,0.6)] md:p-9">
             <div className="flex items-start justify-between">
-
               <div>
-
                 <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-[#e9002d]">
                   GETSUKA
                 </p>
@@ -667,7 +1462,6 @@ const CartPage = () => {
                     ? "CLEAR CART?"
                     : "REMOVE ITEM?"}
                 </h2>
-
               </div>
 
               <button
@@ -675,34 +1469,28 @@ const CartPage = () => {
                 onClick={
                   closeConfirmModal
                 }
-                className="text-2xl leading-none text-[#999] transition hover:text-black"
+                className="text-2xl leading-none text-[#666] transition hover:text-white"
               >
                 ×
               </button>
-
             </div>
 
-            <div className="mt-7 border-l-2 border-[#e9002d] bg-[#f7f7f7] px-4 py-4">
-
-              <p className="text-xs leading-6 text-[#555]">
-
+            <div className="mt-7 border-l-2 border-[#e9002d] bg-[#111] px-4 py-4">
+              <p className="text-xs leading-6 text-[#aaa]">
                 {confirmModal.type ===
                 "clear"
                   ? "This will remove every product currently in your cart."
                   : `Remove "${confirmModal.itemName}" from your cart?`}
-
               </p>
-
             </div>
 
             <div className="mt-8 grid grid-cols-2 gap-3">
-
               <button
                 type="button"
                 onClick={
                   closeConfirmModal
                 }
-                className="h-12 border border-black text-[9px] font-bold uppercase tracking-[0.15em] transition hover:bg-black hover:text-white"
+                className="h-12 border border-[#333] text-[9px] font-bold uppercase tracking-[0.15em] text-white transition hover:bg-white hover:text-black"
               >
                 CANCEL
               </button>
@@ -712,18 +1500,15 @@ const CartPage = () => {
                 onClick={
                   confirmAction
                 }
-                className="h-12 bg-[#e9002d] text-[9px] font-bold uppercase tracking-[0.15em] text-white transition hover:bg-black"
+                className="h-12 bg-[#e9002d] text-[9px] font-bold uppercase tracking-[0.15em] text-white transition hover:bg-white hover:text-black"
               >
                 {confirmModal.type ===
                 "clear"
                   ? "CLEAR CART"
                   : "REMOVE"}
               </button>
-
             </div>
-
           </div>
-
         </div>
       )}
 
@@ -733,29 +1518,22 @@ const CartPage = () => {
 
       <main className="mx-auto max-w-[1440px] px-5 pb-20 pt-10 md:px-10 lg:px-14 lg:pt-14">
 
-        {/* ===================================================
-            HEADER
-        =================================================== */}
+        {/* HEADER */}
 
-        <header className="border-b border-black pb-7">
-
+        <header className="border-b border-[#222] pb-7">
           <div className="flex items-end justify-between gap-5">
-
             <div>
-
-              <p className="text-[9px] font-bold uppercase tracking-[0.35em] text-[#999]">
+              <p className="text-[9px] font-bold uppercase tracking-[0.35em] text-[#777]">
                 GETSUKA / SHOPPING BAG
               </p>
 
               <h1 className="mt-4 text-4xl font-black uppercase tracking-[-0.06em] md:text-6xl">
                 YOUR CART
               </h1>
-
             </div>
 
             <div className="pb-1 text-right">
-
-              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#999]">
+              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#777]">
                 CART
               </p>
 
@@ -766,33 +1544,57 @@ const CartPage = () => {
                   2,
                   "0"
                 )}{" "}
-                {totalItems === 1
+                {totalItems ===
+                1
                   ? "ITEM"
                   : "ITEMS"}
               </p>
-
             </div>
-
           </div>
-
         </header>
 
-        {/* ===================================================
-            CART GRID
-        =================================================== */}
+        {/* UNAVAILABLE WARNING */}
+
+        {!canProceedToCheckout &&
+          !stockSyncing && (
+            <div className="mt-7 border border-[#e9002d] bg-[#100305] px-5 py-5 md:px-7">
+              <div className="flex items-start gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-[#e9002d] text-sm font-black text-white">
+                  !
+                </div>
+
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#e9002d]">
+                    CHECKOUT UNAVAILABLE
+                  </p>
+
+                  <p className="mt-2 text-xs leading-6 text-[#888]">
+                    One or more products
+                    in your cart are
+                    currently out of
+                    stock or unavailable.
+                    Please remove the
+                    unavailable item or
+                    wait until it becomes
+                    available before
+                    proceeding to checkout.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* CART GRID */}
 
         <div className="mt-9 grid grid-cols-1 gap-10 xl:grid-cols-[1fr_380px]">
 
-          {/* =================================================
-              LEFT
-          ================================================= */}
+          {/* LEFT */}
 
           <section>
 
             {/* COLUMN LABELS */}
 
-            <div className="hidden grid-cols-[1fr_130px_100px_110px] gap-5 border-b border-[#ddd] pb-4 text-[8px] font-bold uppercase tracking-[0.2em] text-[#999] md:grid">
-
+            <div className="hidden grid-cols-[1fr_130px_100px_110px] gap-5 border-b border-[#222] pb-4 text-[8px] font-bold uppercase tracking-[0.2em] text-[#777] md:grid">
               <span>
                 PRODUCT
               </span>
@@ -808,19 +1610,16 @@ const CartPage = () => {
               <span className="text-right">
                 TOTAL
               </span>
-
             </div>
 
             {/* CART ITEMS */}
 
             <div>
-
               {cartItems.map(
                 (
                   item,
                   index
                 ) => {
-
                   const quantity =
                     Number(
                       item.quantity ||
@@ -829,7 +1628,8 @@ const CartPage = () => {
 
                   const price =
                     Number(
-                      item.price || 0
+                      item.price ||
+                        0
                     );
 
                   const itemTotal =
@@ -842,12 +1642,30 @@ const CartPage = () => {
                         0
                     );
 
+                  const itemUnavailable =
+                    isCartItemUnavailable(
+                      item
+                    );
+
+                  const canIncrease =
+                    !itemUnavailable &&
+                    !stockSyncing &&
+                    maxStock >
+                      0 &&
+                    quantity <
+                      maxStock &&
+                    quantity <
+                      MAX_CART_QUANTITY;
+
                   return (
                     <article
                       key={`${item.productId}-${item.variantId}-${index}`}
-                      className="group relative border-b border-[#ddd] py-7"
+                      className={`group relative border-b border-[#222] py-7 ${
+                        itemUnavailable
+                          ? "bg-[#050505]"
+                          : ""
+                      }`}
                     >
-
                       <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_130px_100px_110px] md:items-center md:gap-5">
 
                         {/* PRODUCT */}
@@ -863,9 +1681,8 @@ const CartPage = () => {
                                 item.productId
                               )
                             }
-                            className="relative h-40 w-28 shrink-0 overflow-hidden bg-[#f2f2f2] md:h-44 md:w-32"
+                            className="relative h-40 w-28 shrink-0 overflow-hidden bg-[#111] md:h-44 md:w-32"
                           >
-
                             {item.image ? (
                               <img
                                 src={
@@ -874,22 +1691,31 @@ const CartPage = () => {
                                 alt={
                                   item.name
                                 }
-                                className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
+                                className={`h-full w-full object-cover transition duration-700 ${
+                                  itemUnavailable
+                                    ? "opacity-40 grayscale"
+                                    : "group-hover:scale-105"
+                                }`}
                               />
                             ) : (
-                              <div className="flex h-full items-center justify-center text-[8px] font-bold uppercase text-[#aaa]">
+                              <div className="flex h-full items-center justify-center text-[8px] font-bold uppercase text-[#666]">
                                 NO IMAGE
                               </div>
                             )}
 
-                            <div className="absolute inset-x-0 bottom-0 bg-black/80 px-3 py-2 text-left opacity-0 transition group-hover:opacity-100">
-
+                            <div className="absolute inset-x-0 bottom-0 bg-black/90 px-3 py-2 text-left opacity-0 transition group-hover:opacity-100">
                               <span className="text-[7px] font-bold uppercase tracking-[0.15em] text-white">
                                 VIEW PRODUCT →
                               </span>
-
                             </div>
 
+                            {itemUnavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                                <span className="bg-[#e9002d] px-3 py-2 text-[7px] font-black uppercase tracking-[0.15em] text-white">
+                                  OUT OF STOCK
+                                </span>
+                              </div>
+                            )}
                           </button>
 
                           {/* INFO */}
@@ -918,18 +1744,20 @@ const CartPage = () => {
 
                             <div className="mt-4 space-y-1.5">
 
-                              <p className="text-[9px] uppercase tracking-[0.08em] text-[#999]">
+                              <p className="text-[9px] uppercase tracking-[0.08em] text-[#666]">
                                 SIZE
-                                <span className="ml-2 font-bold text-black">
+
+                                <span className="ml-2 font-bold text-white">
                                   {
                                     item.size
                                   }
                                 </span>
                               </p>
 
-                              <p className="text-[9px] uppercase tracking-[0.08em] text-[#999]">
+                              <p className="text-[9px] uppercase tracking-[0.08em] text-[#666]">
                                 COLOR
-                                <span className="ml-2 font-bold text-black">
+
+                                <span className="ml-2 font-bold text-white">
                                   {
                                     item.color
                                   }
@@ -937,9 +1765,10 @@ const CartPage = () => {
                               </p>
 
                               {item.sku && (
-                                <p className="text-[9px] uppercase tracking-[0.08em] text-[#999]">
+                                <p className="text-[9px] uppercase tracking-[0.08em] text-[#666]">
                                   SKU
-                                  <span className="ml-2 font-bold text-black">
+
+                                  <span className="ml-2 font-bold text-white">
                                     {
                                       item.sku
                                     }
@@ -949,6 +1778,12 @@ const CartPage = () => {
 
                             </div>
 
+                            {itemUnavailable && (
+                              <p className="mt-4 text-[8px] font-black uppercase tracking-[0.15em] text-[#e9002d]">
+                                CURRENTLY UNAVAILABLE
+                              </p>
+                            )}
+
                             <button
                               type="button"
                               onClick={() =>
@@ -956,24 +1791,22 @@ const CartPage = () => {
                                   index
                                 )
                               }
-                              className="mt-5 text-[8px] font-bold uppercase tracking-[0.18em] text-[#e9002d] transition hover:text-black"
+                              className="mt-5 text-[8px] font-bold uppercase tracking-[0.18em] text-[#e9002d] transition hover:text-white"
                             >
                               REMOVE ITEM
                             </button>
 
                           </div>
-
                         </div>
 
                         {/* QUANTITY */}
 
                         <div>
-
-                          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.18em] text-[#999] md:hidden">
+                          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.18em] text-[#666] md:hidden">
                             QUANTITY
                           </p>
 
-                          <div className="flex w-fit items-center border border-[#222]">
+                          <div className="flex w-fit items-center border border-[#333]">
 
                             <button
                               type="button"
@@ -986,12 +1819,12 @@ const CartPage = () => {
                                   index
                                 )
                               }
-                              className="flex h-10 w-10 items-center justify-center text-lg transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:text-[#ccc]"
+                              className="flex h-10 w-10 items-center justify-center text-lg transition hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:text-[#333]"
                             >
                               −
                             </button>
 
-                            <span className="flex h-10 w-11 items-center justify-center border-x border-[#222] text-xs font-bold">
+                            <span className="flex h-10 w-11 items-center justify-center border-x border-[#333] text-xs font-bold">
                               {
                                 quantity
                               }
@@ -1000,17 +1833,14 @@ const CartPage = () => {
                             <button
                               type="button"
                               disabled={
-                                maxStock >
-                                  0 &&
-                                quantity >=
-                                  maxStock
+                                !canIncrease
                               }
                               onClick={() =>
                                 increaseQuantity(
                                   index
                                 )
                               }
-                              className="flex h-10 w-10 items-center justify-center text-lg transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:text-[#ccc]"
+                              className="flex h-10 w-10 items-center justify-center text-lg transition hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:text-[#333]"
                             >
                               +
                             </button>
@@ -1018,68 +1848,91 @@ const CartPage = () => {
                           </div>
 
                           {maxStock >
+                            0 &&
+                            !itemUnavailable && (
+                              <p className="mt-2 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#666]">
+                                {
+                                  maxStock
+                                }{" "}
+                                available
+                              </p>
+                            )}
+
+                          {maxStock <=
                             0 && (
-                            <p className="mt-2 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#999]">
-                              {maxStock}{" "}
-                              available
+                            <p className="mt-2 text-[8px] font-black uppercase tracking-[0.08em] text-[#e9002d]">
+                              OUT OF STOCK
                             </p>
                           )}
 
+                          {itemUnavailable &&
+                            maxStock >
+                              0 && (
+                              <p className="mt-2 text-[8px] font-black uppercase tracking-[0.08em] text-[#e9002d]">
+                                CHECK AVAILABILITY
+                              </p>
+                            )}
                         </div>
 
                         {/* PRICE */}
 
                         <div>
-
-                          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.18em] text-[#999] md:hidden">
+                          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.18em] text-[#666] md:hidden">
                             PRICE
                           </p>
 
-                          <p className="text-sm font-semibold">
+                          <p
+                            className={`text-sm font-semibold ${
+                              itemUnavailable
+                                ? "text-[#555]"
+                                : ""
+                            }`}
+                          >
                             {formatPrice(
                               price
                             )}
                           </p>
-
                         </div>
 
                         {/* TOTAL */}
 
                         <div className="md:text-right">
-
-                          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.18em] text-[#999] md:hidden">
+                          <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.18em] text-[#666] md:hidden">
                             TOTAL
                           </p>
 
-                          <p className="text-sm font-black">
+                          <p
+                            className={`text-sm font-black ${
+                              itemUnavailable
+                                ? "text-[#555]"
+                                : ""
+                            }`}
+                          >
                             {formatPrice(
                               itemTotal
                             )}
                           </p>
-
                         </div>
 
                       </div>
-
                     </article>
                   );
                 }
               )}
-
             </div>
 
-            {/* =================================================
-                CART ACTIONS
-            ================================================= */}
+            {/* CART ACTIONS */}
 
-            <div className="flex flex-col justify-between gap-5 border-b border-[#ddd] py-6 sm:flex-row sm:items-center">
+            <div className="flex flex-col justify-between gap-5 border-b border-[#222] py-6 sm:flex-row sm:items-center">
 
               <button
                 type="button"
                 onClick={() =>
-                  navigate("/shop")
+                  navigate(
+                    "/shop"
+                  )
                 }
-                className="group flex items-center gap-3 text-[9px] font-bold uppercase tracking-[0.18em] text-[#555] transition hover:text-black"
+                className="group flex items-center gap-3 text-[9px] font-bold uppercase tracking-[0.18em] text-[#777] transition hover:text-white"
               >
                 <span className="transition-transform group-hover:-translate-x-1">
                   ←
@@ -1093,41 +1946,37 @@ const CartPage = () => {
                 onClick={
                   openClearCartModal
                 }
-                className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#e9002d] transition hover:text-black"
+                className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#e9002d] transition hover:text-white"
               >
                 CLEAR CART
               </button>
 
             </div>
-
           </section>
 
-          {/* =================================================
-              SUMMARY
-          ================================================= */}
+          {/* SUMMARY */}
 
           <aside className="h-fit xl:sticky xl:top-8">
-
-            <div className="border border-[#222] bg-[#fafafa]">
+            <div className="border border-[#222] bg-[#050505]">
 
               {/* SUMMARY HEADER */}
 
-              <div className="flex items-center justify-between border-b border-[#ddd] px-7 py-6">
+              <div className="flex items-center justify-between border-b border-[#222] px-7 py-6">
 
                 <div>
-
-                  <p className="text-[8px] font-bold uppercase tracking-[0.25em] text-[#999]">
+                  <p className="text-[8px] font-bold uppercase tracking-[0.25em] text-[#777]">
                     GETSUKA
                   </p>
 
                   <h2 className="mt-2 text-xl font-black uppercase tracking-[-0.03em]">
                     ORDER SUMMARY
                   </h2>
-
                 </div>
 
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-[10px] font-bold text-white">
-                  {totalItems}
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[10px] font-bold text-black">
+                  {
+                    totalItems
+                  }
                 </span>
 
               </div>
@@ -1137,7 +1986,6 @@ const CartPage = () => {
                 {/* SUBTOTAL */}
 
                 <div className="flex items-center justify-between">
-
                   <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#777]">
                     SUBTOTAL
                   </span>
@@ -1147,41 +1995,33 @@ const CartPage = () => {
                       subtotal
                     )}
                   </span>
-
                 </div>
 
                 {/* SHIPPING */}
 
                 <div className="mt-5 flex items-start justify-between">
-
                   <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#777]">
                     SHIPPING
                   </span>
 
-                  <span className="max-w-[140px] text-right text-[8px] font-semibold uppercase leading-4 text-[#999]">
-                    Calculated at
-                    checkout
+                  <span className="max-w-[140px] text-right text-[8px] font-semibold uppercase leading-4 text-[#777]">
+                    Calculated at checkout
                   </span>
-
                 </div>
 
-                <div className="my-7 border-t border-[#ddd]" />
+                <div className="my-7 border-t border-[#222]" />
 
                 {/* TOTAL */}
 
                 <div className="flex items-end justify-between">
-
                   <div>
-
                     <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#777]">
                       TOTAL
                     </p>
 
-                    <p className="mt-1 text-[8px] uppercase tracking-[0.08em] text-[#aaa]">
-                      Taxes calculated at
-                      checkout
+                    <p className="mt-1 text-[8px] uppercase tracking-[0.08em] text-[#555]">
+                      Taxes calculated at checkout
                     </p>
-
                   </div>
 
                   <span className="text-2xl font-black tracking-[-0.04em]">
@@ -1189,7 +2029,6 @@ const CartPage = () => {
                       total
                     )}
                   </span>
-
                 </div>
 
                 {/* CHECKOUT */}
@@ -1199,23 +2038,45 @@ const CartPage = () => {
                   onClick={
                     handleCheckout
                   }
-                  className="group mt-7 flex h-14 w-full items-center justify-between bg-[#e9002d] px-5 text-[9px] font-bold uppercase tracking-[0.18em] text-white transition hover:bg-black"
+                  disabled={
+                    !canProceedToCheckout
+                  }
+                  className={`group mt-7 flex h-14 w-full items-center justify-between px-5 text-[9px] font-bold uppercase tracking-[0.18em] text-white transition ${
+                    canProceedToCheckout
+                      ? "bg-[#e9002d] hover:bg-white hover:text-black"
+                      : "cursor-not-allowed bg-[#222] text-[#555]"
+                  }`}
                 >
-
                   <span>
-                    PROCEED TO CHECKOUT
+                    {stockSyncing
+                      ? "VERIFYING STOCK"
+                      : canProceedToCheckout
+                      ? "PROCEED TO CHECKOUT"
+                      : "CHECKOUT UNAVAILABLE"}
                   </span>
 
-                  <span className="text-base transition-transform group-hover:translate-x-1">
+                  <span
+                    className={
+                      canProceedToCheckout
+                        ? "text-base transition-transform group-hover:translate-x-1"
+                        : "text-base"
+                    }
+                  >
                     →
                   </span>
-
                 </button>
+
+                {!canProceedToCheckout &&
+                  !stockSyncing && (
+                    <p className="mt-3 text-center text-[8px] font-bold uppercase leading-4 tracking-[0.08em] text-[#e9002d]">
+                      REMOVE UNAVAILABLE
+                      ITEMS TO CONTINUE
+                    </p>
+                  )}
 
                 {/* COUPON */}
 
                 <div className="mt-8">
-
                   <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-[#555]">
                     HAVE A PROMO CODE?
                   </p>
@@ -1231,12 +2092,11 @@ const CartPage = () => {
                         event
                       ) =>
                         setCoupon(
-                          event.target
-                            .value
+                          event.target.value
                         )
                       }
                       placeholder="ENTER CODE"
-                      className="min-w-0 flex-1 border border-[#ccc] bg-white px-4 py-3 text-[9px] font-semibold uppercase tracking-[0.08em] outline-none placeholder:text-[#aaa] focus:border-black"
+                      className="min-w-0 flex-1 border border-[#333] bg-black px-4 py-3 text-[9px] font-semibold uppercase tracking-[0.08em] text-white outline-none placeholder:text-[#444] focus:border-white"
                     />
 
                     <button
@@ -1244,18 +2104,17 @@ const CartPage = () => {
                       onClick={
                         applyCoupon
                       }
-                      className="border border-l-0 border-black bg-white px-5 text-[8px] font-bold uppercase tracking-[0.12em] transition hover:bg-black hover:text-white"
+                      className="border border-l-0 border-[#333] bg-black px-5 text-[8px] font-bold uppercase tracking-[0.12em] transition hover:bg-white hover:text-black"
                     >
                       APPLY
                     </button>
 
                   </div>
-
                 </div>
 
                 {/* SECURITY */}
 
-                <div className="mt-8 flex items-center justify-center gap-2 border-t border-[#ddd] pt-5">
+                <div className="mt-8 flex items-center justify-center gap-2 border-t border-[#222] pt-5">
 
                   <svg
                     width="13"
@@ -1276,30 +2135,24 @@ const CartPage = () => {
                     <path d="M8 10V7a4 4 0 0 1 8 0v3" />
                   </svg>
 
-                  <span className="text-[8px] font-bold uppercase tracking-[0.15em] text-[#999]">
+                  <span className="text-[8px] font-bold uppercase tracking-[0.15em] text-[#555]">
                     SECURE CHECKOUT
                   </span>
 
                 </div>
 
               </div>
-
             </div>
-
           </aside>
-
         </div>
 
-        {/* ===================================================
-            DISCOVER MORE
-        =================================================== */}
+        {/* DISCOVER MORE */}
 
-        <section className="mt-20 border-t border-black pt-12">
+        <section className="mt-20 border-t border-[#222] pt-12">
 
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
 
             <div>
-
               <p className="text-[8px] font-bold uppercase tracking-[0.3em] text-[#e9002d]">
                 KEEP EXPLORING
               </p>
@@ -1307,22 +2160,22 @@ const CartPage = () => {
               <h2 className="mt-3 text-2xl font-black uppercase tracking-[-0.04em] md:text-3xl">
                 ITEMS YOU MAY HAVE MISSED
               </h2>
-
             </div>
 
             <button
               type="button"
               onClick={() =>
-                navigate("/shop")
+                navigate(
+                  "/shop"
+                )
               }
-              className="group flex items-center gap-3 text-[9px] font-bold uppercase tracking-[0.18em] text-[#555] transition hover:text-black"
+              className="group flex items-center gap-3 text-[9px] font-bold uppercase tracking-[0.18em] text-[#777] transition hover:text-white"
             >
               VIEW ALL
 
               <span className="transition-transform group-hover:translate-x-1">
                 →
               </span>
-
             </button>
 
           </div>
@@ -1330,18 +2183,16 @@ const CartPage = () => {
           {/* RELATED LOADING */}
 
           {relatedLoading ? (
-            <div className="mt-9 flex h-64 items-center justify-center border border-[#eee]">
-
+            <div className="mt-9 flex h-64 items-center justify-center border border-[#222]">
               <div className="text-center">
 
-                <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-[#ddd] border-t-black" />
+                <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-[#333] border-t-[#e9002d]" />
 
-                <p className="mt-4 text-[8px] font-bold uppercase tracking-[0.2em] text-[#999]">
+                <p className="mt-4 text-[8px] font-bold uppercase tracking-[0.2em] text-[#666]">
                   Loading collection
                 </p>
 
               </div>
-
             </div>
           ) : relatedProducts.length >
             0 ? (
@@ -1349,7 +2200,6 @@ const CartPage = () => {
 
               {relatedProducts.map(
                 (item) => {
-
                   const finalPrice =
                     item.salePrice ??
                     item.price;
@@ -1379,9 +2229,10 @@ const CartPage = () => {
 
                       {/* IMAGE */}
 
-                      <div className="relative aspect-[0.8] overflow-hidden bg-[#f3f3f3]">
+                      <div className="relative aspect-[0.8] overflow-hidden bg-[#111]">
 
-                        {item.images?.[0] ? (
+                        {item
+                          .images?.[0] ? (
                           <img
                             src={
                               item.images[0]
@@ -1392,7 +2243,7 @@ const CartPage = () => {
                             className="h-full w-full object-cover transition duration-700 ease-out group-hover:scale-105"
                           />
                         ) : (
-                          <div className="flex h-full items-center justify-center text-[8px] font-bold uppercase text-[#aaa]">
+                          <div className="flex h-full items-center justify-center text-[8px] font-bold uppercase text-[#555]">
                             NO IMAGE
                           </div>
                         )}
@@ -1404,11 +2255,9 @@ const CartPage = () => {
                         )}
 
                         <div className="absolute bottom-0 left-0 right-0 translate-y-full bg-black px-4 py-3 transition-transform duration-300 group-hover:translate-y-0">
-
                           <p className="text-center text-[8px] font-bold uppercase tracking-[0.15em] text-white">
                             VIEW PRODUCT →
                           </p>
-
                         </div>
 
                       </div>
@@ -1438,7 +2287,7 @@ const CartPage = () => {
                           </span>
 
                           {hasSale && (
-                            <span className="text-[9px] text-[#999] line-through">
+                            <span className="text-[9px] text-[#666] line-through">
                               {formatPrice(
                                 item.price
                               )}
@@ -1456,19 +2305,16 @@ const CartPage = () => {
 
             </div>
           ) : (
-            <div className="mt-9 border border-[#eee] p-14 text-center">
-
-              <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#999]">
+            <div className="mt-9 border border-[#222] p-14 text-center">
+              <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#555]">
                 MORE PRODUCTS COMING SOON
               </p>
-
             </div>
           )}
 
         </section>
 
       </main>
-
     </div>
   );
 };

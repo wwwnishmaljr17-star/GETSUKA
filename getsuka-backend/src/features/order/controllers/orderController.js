@@ -3,6 +3,12 @@ import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Product from "../../product/models/Product.js";
 import Address from "../../address/models/Address.js";
+import Coupon from "../../coupon/models/Coupon.js";
+
+import {
+  creditWallet,
+  debitWallet,
+} from "../../wallet/controllers/walletController.js";
 
 // =========================================================
 // CREATE ORDER
@@ -82,9 +88,8 @@ export const createOrder = async (
     // =======================================================
 
     const allowedPaymentMethods = [
-      "upi",
-      "card",
-      "netbanking",
+      "razorpay",
+      "wallet",
       "cod",
     ];
 
@@ -372,17 +377,147 @@ export const createOrder = async (
         : 0;
 
     // =======================================================
-    // DISCOUNT
+    // COUPON / DISCOUNT
     // =======================================================
 
     let discount = 0;
+    let appliedCoupon = null;
 
-    if (
-      couponCode &&
-      typeof couponCode ===
-        "string"
-    ) {
-      discount = 0;
+    const normalizedCouponCode =
+      typeof couponCode === "string"
+        ? couponCode.trim().toUpperCase()
+        : "";
+
+    if (normalizedCouponCode) {
+      const coupon =
+        await Coupon.findOne({
+          code: normalizedCouponCode,
+        });
+
+      if (!coupon) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid coupon code",
+        });
+      }
+
+      if (!coupon.isActive) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This coupon is inactive",
+        });
+      }
+
+      const now =
+        new Date();
+
+      if (
+        now <
+        coupon.validFrom
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This coupon is not active yet",
+        });
+      }
+
+      if (
+        now >
+        coupon.validUntil
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This coupon has expired",
+        });
+      }
+
+      if (
+        coupon.usageLimit !== null &&
+        coupon.usedCount >=
+          coupon.usageLimit
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This coupon usage limit has been reached",
+        });
+      }
+
+      if (
+        coupon.oneUsePerUser
+      ) {
+        const previousCouponOrder =
+          await Order.exists({
+            userId,
+            couponCode:
+              normalizedCouponCode,
+          });
+
+        if (
+          previousCouponOrder
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "You have already used this coupon",
+          });
+        }
+      }
+
+      if (
+        subtotal <
+        coupon.minOrderAmount
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `Minimum order amount is ₹${coupon.minOrderAmount}`,
+        });
+      }
+
+      if (
+        coupon.discountType ===
+        "percentage"
+      ) {
+        discount =
+          (subtotal *
+            coupon.discountValue) /
+          100;
+
+        if (
+          coupon.maxDiscountAmount !==
+            null &&
+          discount >
+            coupon.maxDiscountAmount
+        ) {
+          discount =
+            coupon.maxDiscountAmount;
+        }
+      } else if (
+        coupon.discountType ===
+        "fixed"
+      ) {
+        discount =
+          coupon.discountValue;
+      }
+
+      discount =
+        Math.min(
+          discount,
+          subtotal
+        );
+
+      discount =
+        Math.round(
+          discount * 100
+        ) / 100;
+
+      appliedCoupon =
+        coupon;
     }
 
     // =======================================================
@@ -402,6 +537,23 @@ export const createOrder = async (
       shippingCharge;
 
     // =======================================================
+    // COD LIMIT
+    // =======================================================
+
+    const COD_LIMIT = 25000;
+
+    if (
+      paymentMethod === "cod" &&
+      totalAmount > COD_LIMIT
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cash on Delivery is available only for orders up to ₹25,000. Please choose an online payment method for this order.",
+      });
+    }
+
+    // =======================================================
     // ORDER NUMBER
     // =======================================================
 
@@ -417,7 +569,10 @@ export const createOrder = async (
     // =======================================================
 
     const paymentStatus =
-      "pending";
+      paymentMethod === "razorpay" ||
+      paymentMethod === "wallet"
+        ? "paid"
+        : "pending";
 
     // =======================================================
     // SHIPPING ADDRESS SNAPSHOT
@@ -474,7 +629,7 @@ export const createOrder = async (
         totalAmount,
 
         couponCode:
-          couponCode || "",
+          normalizedCouponCode,
 
         paymentMethod,
 
@@ -488,11 +643,133 @@ export const createOrder = async (
       });
 
     // =======================================================
+    // INCREMENT COUPON USAGE
+    // =======================================================
+
+    if (
+      appliedCoupon
+    ) {
+      const usageFilter = {
+        _id:
+          appliedCoupon._id,
+
+        isActive:
+          true,
+      };
+
+      if (
+        appliedCoupon.usageLimit !==
+        null
+      ) {
+        usageFilter.usedCount = {
+          $lt:
+            appliedCoupon.usageLimit,
+        };
+      }
+
+      const updatedCoupon =
+        await Coupon.findOneAndUpdate(
+          usageFilter,
+          {
+            $inc: {
+              usedCount:
+                1,
+            },
+          },
+          {
+            new: true,
+          }
+        );
+
+      if (
+        !updatedCoupon
+      ) {
+        await Order.deleteOne({
+          _id:
+            order._id,
+        });
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "This coupon usage limit has been reached. Please try again.",
+        });
+      }
+    }
+
+    // =======================================================
+    // DEBIT WALLET FOR WALLET PAYMENT
+    // =======================================================
+
+    let walletDebitResult =
+      null;
+
+    if (
+      paymentMethod ===
+      "wallet"
+    ) {
+      try {
+        walletDebitResult =
+          await debitWallet({
+            userId,
+
+            amount:
+              totalAmount,
+
+            reason:
+              "wallet_payment",
+
+            description:
+              `Payment for order ${orderNumber}`,
+
+            orderId:
+              order._id,
+
+            orderNumber,
+          });
+      } catch (walletError) {
+        await Order.deleteOne({
+          _id:
+            order._id,
+        });
+
+        if (
+          appliedCoupon
+        ) {
+          await Coupon.findOneAndUpdate(
+            {
+              _id:
+                appliedCoupon._id,
+
+              usedCount: {
+                $gt: 0,
+              },
+            },
+            {
+              $inc: {
+                usedCount:
+                  -1,
+              },
+            }
+          );
+        }
+
+        return res.status(400).json({
+          success: false,
+          message:
+            walletError.message ||
+            "Insufficient wallet balance",
+        });
+      }
+    }
+
+    // =======================================================
     // DECREASE STOCK
     // =======================================================
 
     for (
-      const item of orderItems
+      const item of
+      orderItems
     ) {
       const product =
         productMap.get(
@@ -617,7 +894,8 @@ export const getUserOrderById =
 
       const order =
         await Order.findOne({
-          _id: orderId,
+          _id:
+            orderId,
           userId,
         }).lean();
 
@@ -667,10 +945,6 @@ export const cancelUserOrder =
         cancellationReason = "",
       } = req.body;
 
-      // =====================================================
-      // VALIDATE ORDER ID
-      // =====================================================
-
       if (
         !mongoose.Types.ObjectId.isValid(
           orderId
@@ -682,10 +956,6 @@ export const cancelUserOrder =
             "Invalid order ID",
         });
       }
-
-      // =====================================================
-      // VALIDATE REASON
-      // =====================================================
 
       const reason =
         String(
@@ -700,13 +970,10 @@ export const cancelUserOrder =
         });
       }
 
-      // =====================================================
-      // FIND ORDER
-      // =====================================================
-
       const order =
         await Order.findOne({
-          _id: orderId,
+          _id:
+            orderId,
           userId,
         });
 
@@ -717,10 +984,6 @@ export const cancelUserOrder =
             "Order not found",
         });
       }
-
-      // =====================================================
-      // CHECK STATUS
-      // =====================================================
 
       const cancellableStatuses =
         [
@@ -740,11 +1003,32 @@ export const cancelUserOrder =
         });
       }
 
+      const activeItems =
+        order.items.filter(
+          (item) =>
+            (item.itemStatus ||
+              "active") ===
+            "active"
+        );
+
+      if (
+        activeItems.length ===
+        0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "All items in this order are already cancelled",
+        });
+      }
+
       // =====================================================
       // RESTORE STOCK
       // =====================================================
 
-      for (const item of order.items) {
+      for (
+        const item of activeItems
+      ) {
         if (
           !item.productId ||
           !item.variantId
@@ -776,11 +1060,93 @@ export const cancelUserOrder =
 
         variant.stock +=
           Number(
-            item.quantity || 0
+            item.quantity ||
+              0
           );
 
         await product.save();
       }
+
+      // =====================================================
+      // REFUND PAID ORDER
+      // =====================================================
+
+      let refundResult =
+        null;
+
+      if (
+        order.paymentStatus ===
+          "paid" &&
+        (
+          order.paymentMethod ===
+            "razorpay" ||
+          order.paymentMethod ===
+            "wallet"
+        )
+      ) {
+        refundResult =
+          await creditWallet({
+            userId,
+
+            amount:
+              Number(
+                order.totalAmount
+              ) || 0,
+
+            reason:
+              "order_cancellation_refund",
+
+            description:
+              `Refund for cancelled order ${order.orderNumber}`,
+
+            orderId:
+              order._id,
+
+            orderNumber:
+              order.orderNumber,
+          });
+
+        order.paymentStatus =
+          "refunded";
+      }
+
+      // =====================================================
+      // MARK ITEMS CANCELLED
+      // =====================================================
+
+      const cancelledAt =
+        new Date();
+
+      order.items.forEach(
+        (item) => {
+          if (
+            (item.itemStatus ||
+              "active") ===
+            "active"
+          ) {
+            item.itemStatus =
+              "cancelled";
+
+            item.cancellationReason =
+              reason;
+
+            item.cancelledAt =
+              cancelledAt;
+
+            if (
+              refundResult
+            ) {
+              item.refundStatus =
+                "refunded";
+
+              item.refundedAmount =
+                Number(
+                  item.totalPrice
+                ) || 0;
+            }
+          }
+        }
+      );
 
       // =====================================================
       // UPDATE ORDER
@@ -793,36 +1159,34 @@ export const cancelUserOrder =
         reason;
 
       order.cancelledAt =
-        new Date();
+        cancelledAt;
 
       await order.save();
-
-      // =====================================================
-      // RESPONSE
-      // =====================================================
 
       return res.status(200).json({
         success: true,
 
         message:
-          "Order cancelled successfully",
+          refundResult
+            ? "Order cancelled successfully and refund added to wallet"
+            : "Order cancelled successfully",
 
-        order: {
-          id:
-            order._id,
+        refund:
+          refundResult
+            ? {
+                amount:
+                  Number(
+                    order.totalAmount
+                  ) || 0,
 
-          orderNumber:
-            order.orderNumber,
+                walletBalance:
+                  refundResult.wallet
+                    ?.balance ??
+                  null,
+              }
+            : null,
 
-          status:
-            order.status,
-
-          cancellationReason:
-            order.cancellationReason,
-
-          cancelledAt:
-            order.cancelledAt,
-        },
+        order,
       });
     } catch (error) {
       console.error(
@@ -833,7 +1197,332 @@ export const cancelUserOrder =
       return res.status(500).json({
         success: false,
         message:
+          error.message ||
           "Failed to cancel order",
+      });
+    }
+  };
+
+// =========================================================
+// CANCEL USER ORDER ITEM
+// =========================================================
+
+export const cancelUserOrderItem =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const userId =
+        req.user.userId;
+
+      const {
+        orderId,
+        itemId,
+      } = req.params;
+
+      const {
+        cancellationReason = "",
+      } = req.body;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          orderId
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid order ID",
+        });
+      }
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          itemId
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid order item ID",
+        });
+      }
+
+      const reason =
+        String(
+          cancellationReason
+        ).trim();
+
+      if (!reason) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Cancellation reason is required",
+        });
+      }
+
+      const order =
+        await Order.findOne({
+          _id:
+            orderId,
+          userId,
+        });
+
+      if (!order) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Order not found",
+        });
+      }
+
+      const cancellableStatuses =
+        [
+          "placed",
+          "confirmed",
+        ];
+
+      if (
+        !cancellableStatuses.includes(
+          order.status
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This order can no longer be cancelled",
+        });
+      }
+
+      const item =
+        order.items.id(itemId);
+
+      if (!item) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Order item not found",
+        });
+      }
+
+      if (
+        (item.itemStatus ||
+          "active") ===
+        "cancelled"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This item is already cancelled",
+        });
+      }
+
+      if (
+        item.productId &&
+        item.variantId
+      ) {
+        const product =
+          await Product.findOne({
+            _id:
+              item.productId,
+
+            isDeleted:
+              false,
+          });
+
+        if (!product) {
+          return res.status(404).json({
+            success: false,
+            message:
+              "Product for this order item no longer exists",
+          });
+        }
+
+        const variant =
+          product.variants.id(
+            item.variantId
+          );
+
+        if (!variant) {
+          return res.status(404).json({
+            success: false,
+            message:
+              "Variant for this order item no longer exists",
+          });
+        }
+
+        variant.stock +=
+          Number(
+            item.quantity ||
+              0
+          );
+
+        await product.save();
+      }
+
+      let refundAmount =
+        Number(
+          item.totalPrice
+        ) || 0;
+
+      if (
+        order.paymentStatus ===
+          "paid" &&
+        (
+          order.paymentMethod ===
+            "razorpay" ||
+          order.paymentMethod ===
+            "wallet"
+        )
+      ) {
+        if (
+          Number(order.discount) >
+            0 &&
+          Number(order.subtotal) >
+            0
+        ) {
+          const itemDiscount =
+            (refundAmount /
+              Number(
+                order.subtotal
+              )) *
+            Number(
+              order.discount
+            );
+
+          refundAmount =
+            Math.max(
+              0,
+              refundAmount -
+                itemDiscount
+            );
+        }
+
+        refundAmount =
+          Math.round(
+            refundAmount * 100
+          ) / 100;
+      } else {
+        refundAmount = 0;
+      }
+
+      let refundResult =
+        null;
+
+      if (
+        refundAmount > 0
+      ) {
+        refundResult =
+          await creditWallet({
+            userId,
+
+            amount:
+              refundAmount,
+
+            reason:
+              "order_cancellation_refund",
+
+            description:
+              `Refund for cancelled item ${item.productName} from order ${order.orderNumber}`,
+
+            orderId:
+              order._id,
+
+            orderNumber:
+              order.orderNumber,
+          });
+      }
+
+      item.itemStatus =
+        "cancelled";
+
+      item.cancellationReason =
+        reason;
+
+      item.cancelledAt =
+        new Date();
+
+      if (refundResult) {
+        item.refundStatus =
+          "refunded";
+
+        item.refundedAmount =
+          refundAmount;
+      }
+
+      const remainingActiveItems =
+        order.items.filter(
+          (orderItem) =>
+            (orderItem.itemStatus ||
+              "active") ===
+            "active"
+        );
+
+      if (
+        remainingActiveItems.length ===
+        0
+      ) {
+        order.status =
+          "cancelled";
+
+        order.cancellationReason =
+          reason;
+
+        order.cancelledAt =
+          new Date();
+
+        if (
+          order.paymentStatus ===
+            "paid" &&
+          (
+            order.paymentMethod ===
+              "razorpay" ||
+            order.paymentMethod ===
+              "wallet"
+          )
+        ) {
+          order.paymentStatus =
+            "refunded";
+        }
+      }
+
+      await order.save();
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          refundResult
+            ? "Item cancelled successfully and refund added to wallet"
+            : "Item cancelled successfully",
+
+        refund:
+          refundResult
+            ? {
+                amount:
+                  refundAmount,
+
+                walletBalance:
+                  refundResult.wallet
+                    ?.balance ??
+                  null,
+              }
+            : null,
+
+        order,
+      });
+    } catch (error) {
+      console.error(
+        "Cancel User Order Item Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          error.message ||
+          "Failed to cancel order item",
       });
     }
   };
@@ -858,10 +1547,6 @@ export const returnUserOrder =
         returnReason = "",
       } = req.body;
 
-      // =====================================================
-      // VALIDATE ORDER ID
-      // =====================================================
-
       if (
         !mongoose.Types.ObjectId.isValid(
           orderId
@@ -873,10 +1558,6 @@ export const returnUserOrder =
             "Invalid order ID",
         });
       }
-
-      // =====================================================
-      // VALIDATE RETURN REASON
-      // =====================================================
 
       const reason =
         String(
@@ -891,13 +1572,10 @@ export const returnUserOrder =
         });
       }
 
-      // =====================================================
-      // FIND ORDER
-      // =====================================================
-
       const order =
         await Order.findOne({
-          _id: orderId,
+          _id:
+            orderId,
           userId,
         });
 
@@ -910,7 +1588,7 @@ export const returnUserOrder =
       }
 
       // =====================================================
-      // CHECK ORDER STATUS
+      // RETURN ONLY AFTER DELIVERY
       // =====================================================
 
       if (
@@ -925,7 +1603,7 @@ export const returnUserOrder =
       }
 
       // =====================================================
-      // CHECK RETURN STATUS
+      // ONLY ONE RETURN REQUEST
       // =====================================================
 
       const currentReturnStatus =
@@ -944,7 +1622,7 @@ export const returnUserOrder =
       }
 
       // =====================================================
-      // CHECK 3-DAY RETURN WINDOW
+      // 3-DAY RETURN WINDOW
       // =====================================================
 
       const deliveredAt =
@@ -1011,17 +1689,10 @@ export const returnUserOrder =
       order.returnStatus =
         "pending";
 
-      // IMPORTANT:
-      // Do NOT change order.status here.
-      // Do NOT restore stock here.
-      // Stock is restored only after the return reaches
-      // the appropriate collection/completion stage.
+      // Order itself stays DELIVERED.
+      // Only returnStatus changes.
 
       await order.save();
-
-      // =====================================================
-      // RESPONSE
-      // =====================================================
 
       return res.status(200).json({
         success: true,
@@ -1207,7 +1878,8 @@ export const getAdminOrders =
       };
 
       if (
-        sort === "oldest"
+        sort ===
+        "oldest"
       ) {
         sortOption = {
           createdAt: 1,
@@ -1215,7 +1887,8 @@ export const getAdminOrders =
       }
 
       if (
-        sort === "amount-high"
+        sort ===
+        "amount-high"
       ) {
         sortOption = {
           totalAmount: -1,
@@ -1223,7 +1896,8 @@ export const getAdminOrders =
       }
 
       if (
-        sort === "amount-low"
+        sort ===
+        "amount-low"
       ) {
         sortOption = {
           totalAmount: 1,
@@ -1239,7 +1913,9 @@ export const getAdminOrders =
         totalOrders,
       ] = await Promise.all([
         Order.find(filter)
-          .sort(sortOption)
+          .sort(
+            sortOption
+          )
           .skip(skip)
           .limit(perPage)
           .lean(),
@@ -1249,19 +1925,11 @@ export const getAdminOrders =
         ),
       ]);
 
-      // =====================================================
-      // PAGINATION
-      // =====================================================
-
       const totalPages =
         Math.ceil(
           totalOrders /
             perPage
         );
-
-      // =====================================================
-      // RESPONSE
-      // =====================================================
 
       return res.status(200).json({
         success: true,
@@ -1427,6 +2095,81 @@ export const updateAdminOrderStatus =
       }
 
       // =====================================================
+      // STRICT FORWARD-ONLY ORDER FLOW
+      // =====================================================
+      //
+      // placed
+      //   ├── confirmed
+      //   └── cancelled
+      //
+      // confirmed
+      //   ├── shipped
+      //   └── cancelled
+      //
+      // shipped
+      //   └── out_for_delivery
+      //
+      // out_for_delivery
+      //   └── delivered
+      //
+      // delivered / cancelled / returned
+      //   └── no further admin status changes
+      //
+      // =====================================================
+
+      const nextStatuses = {
+        placed: [
+          "confirmed",
+          "cancelled",
+        ],
+
+        confirmed: [
+          "shipped",
+          "cancelled",
+        ],
+
+        shipped: [
+          "out_for_delivery",
+        ],
+
+        out_for_delivery: [
+          "delivered",
+        ],
+
+        delivered: [],
+
+        cancelled: [],
+
+        returned: [],
+      };
+
+      const currentStatus =
+        order.status;
+
+      const allowedNextStatuses =
+        nextStatuses[
+          currentStatus
+        ] || [];
+
+      if (
+        !allowedNextStatuses.includes(
+          status
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `Invalid order status transition: ${currentStatus.replace(
+              /_/g,
+              " "
+            )} → ${status.replace(
+              /_/g,
+              " "
+            )}.`,
+        });
+      }
+
+      // =====================================================
       // UPDATE STATUS
       // =====================================================
 
@@ -1434,7 +2177,7 @@ export const updateAdminOrderStatus =
         status;
 
       // =====================================================
-      // UPDATE DELIVERY DATE
+      // DELIVERY DATE
       // =====================================================
 
       if (
@@ -1443,24 +2186,37 @@ export const updateAdminOrderStatus =
       ) {
         order.deliveredAt =
           new Date();
+
+        // COD is considered paid when delivery is completed.
+        if (
+          order.paymentMethod ===
+          "cod"
+        ) {
+          order.paymentStatus =
+            "paid";
+        }
       }
 
       // =====================================================
-      // UPDATE PAYMENT STATUS
+      // ONLINE PAYMENT STATUS
       // =====================================================
 
       if (
         status ===
           "delivered" &&
-        order.paymentMethod !==
-          "cod"
+        (
+          order.paymentMethod ===
+            "razorpay" ||
+          order.paymentMethod ===
+            "wallet"
+        )
       ) {
         order.paymentStatus =
           "paid";
       }
 
       // =====================================================
-      // CANCEL DETAILS
+      // ADMIN CANCELLATION
       // =====================================================
 
       if (
@@ -1473,13 +2229,47 @@ export const updateAdminOrderStatus =
 
         order.cancelledAt =
           new Date();
+
+        // Refund only if the order was already paid.
+        // COD stays pending if cancelled before delivery.
+        if (
+          order.paymentStatus ===
+            "paid" &&
+          (
+            order.paymentMethod ===
+              "razorpay" ||
+            order.paymentMethod ===
+              "wallet"
+          )
+        ) {
+          await creditWallet({
+            userId:
+              order.userId,
+
+            amount:
+              Number(
+                order.totalAmount
+              ) || 0,
+
+            reason:
+              "order_cancellation_refund",
+
+            description:
+              `Refund for admin-cancelled order ${order.orderNumber}`,
+
+            orderId:
+              order._id,
+
+            orderNumber:
+              order.orderNumber,
+          });
+
+          order.paymentStatus =
+            "refunded";
+        }
       }
 
       await order.save();
-
-      // =====================================================
-      // RESPONSE
-      // =====================================================
 
       return res.status(200).json({
         success: true,
@@ -1541,6 +2331,7 @@ export const approveReturnRequest =
         });
       }
 
+      // Return request can only belong to a delivered order.
       if (
         order.status !==
         "delivered"
@@ -1552,6 +2343,7 @@ export const approveReturnRequest =
         });
       }
 
+      // Admin can approve ONLY while request is pending.
       if (
         order.returnStatus !==
         "pending"
@@ -1646,6 +2438,8 @@ export const rejectReturnRequest =
         });
       }
 
+      // Admin can reject ONLY while request is pending.
+      // Once approved/pickup starts, reject is impossible.
       if (
         order.returnStatus !==
         "pending"
@@ -1726,6 +2520,7 @@ export const markReturnCollectionPending =
         });
       }
 
+      // Pickup can start only after admin approval.
       if (
         order.returnStatus !==
         "approved"
@@ -1766,7 +2561,7 @@ export const markReturnCollectionPending =
   };
 
 // =========================================================
-// ADMIN — MARK RETURN COLLECTED
+// ADMIN — MARK RETURN COLLECTED / PICKED UP
 // =========================================================
 
 export const markReturnCollected =
@@ -1803,6 +2598,7 @@ export const markReturnCollected =
         });
       }
 
+      // Pickup is allowed only after approval and pickup scheduling.
       if (
         order.returnStatus !==
         "collection_pending"
@@ -1820,12 +2616,60 @@ export const markReturnCollected =
       order.returnCollectedAt =
         new Date();
 
+      // =====================================================
+      // REFUND ONLY AFTER PICKUP
+      // =====================================================
+      //
+      // Admin cannot approve/reject anymore because the return
+      // is already collected.
+      //
+      // The refund is issued now.
+      // =====================================================
+
+      if (
+        order.paymentStatus ===
+          "paid" &&
+        (
+          order.paymentMethod ===
+            "razorpay" ||
+          order.paymentMethod ===
+            "wallet" ||
+          order.paymentMethod ===
+            "cod"
+        )
+      ) {
+        await creditWallet({
+          userId:
+            order.userId,
+
+          amount:
+            Number(
+              order.totalAmount
+            ) || 0,
+
+          reason:
+            "order_return_refund",
+
+          description:
+            `Refund for returned order ${order.orderNumber}`,
+
+          orderId:
+            order._id,
+
+          orderNumber:
+            order.orderNumber,
+        });
+
+        order.paymentStatus =
+          "refunded";
+      }
+
       await order.save();
 
       return res.status(200).json({
         success: true,
         message:
-          "Return marked as collected",
+          "Return marked as collected and refund processed",
         order,
       });
     } catch (error) {
@@ -1880,6 +2724,7 @@ export const completeReturn =
         });
       }
 
+      // Complete only after pickup.
       if (
         order.returnStatus !==
         "collected"
@@ -1892,10 +2737,13 @@ export const completeReturn =
       }
 
       // =====================================================
-      // RESTORE PRODUCT STOCK ONLY AFTER COLLECTION
+      // RESTORE PRODUCT STOCK
       // =====================================================
 
-      for (const item of order.items) {
+      for (
+        const item of
+        order.items
+      ) {
         if (
           !item.productId ||
           !item.variantId
@@ -1927,7 +2775,8 @@ export const completeReturn =
 
         variant.stock +=
           Number(
-            item.quantity || 0
+            item.quantity ||
+              0
           );
 
         await product.save();

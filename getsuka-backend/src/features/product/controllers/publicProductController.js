@@ -176,40 +176,162 @@ export const getPublicProducts = async (req, res) => {
 
     // =======================================================
     // PRICE FILTER
+    //
+    // ACTUAL SELLING PRICE:
+    //
+    // If salePrice exists AND is lower than price:
+    //     use salePrice
+    //
+    // Otherwise:
+    //     use regular price
+    //
+    // Example:
+    //
+    // price     = 3599
+    // salePrice = 2999
+    //
+    // MAX PRICE = 3000
+    // => SHOW PRODUCT
+    //
+    // MAX PRICE = 2000
+    // => HIDE PRODUCT
     // =======================================================
 
-    const parsedMinPrice =
+    const hasMinPrice =
       minPrice !== "" &&
       minPrice !== undefined &&
-      minPrice !== null
-        ? Number(minPrice)
-        : null;
+      minPrice !== null;
 
-    const parsedMaxPrice =
+    const hasMaxPrice =
       maxPrice !== "" &&
       maxPrice !== undefined &&
-      maxPrice !== null
-        ? Number(maxPrice)
-        : null;
+      maxPrice !== null;
+
+    const parsedMinPrice = hasMinPrice
+      ? Number(minPrice)
+      : null;
+
+    const parsedMaxPrice = hasMaxPrice
+      ? Number(maxPrice)
+      : null;
 
     if (
-      parsedMinPrice !== null &&
-      Number.isFinite(parsedMinPrice)
+      hasMinPrice &&
+      !Number.isFinite(parsedMinPrice)
     ) {
-      filter.price = {
-        ...(filter.price || {}),
-        $gte: parsedMinPrice,
-      };
+      return res.status(400).json({
+        success: false,
+        message: "Invalid minimum price.",
+      });
     }
 
     if (
-      parsedMaxPrice !== null &&
-      Number.isFinite(parsedMaxPrice)
+      hasMaxPrice &&
+      !Number.isFinite(parsedMaxPrice)
     ) {
-      filter.price = {
-        ...(filter.price || {}),
-        $lte: parsedMaxPrice,
+      return res.status(400).json({
+        success: false,
+        message: "Invalid maximum price.",
+      });
+    }
+
+    if (
+      hasMinPrice &&
+      parsedMinPrice < 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Minimum price cannot be negative.",
+      });
+    }
+
+    if (
+      hasMaxPrice &&
+      parsedMaxPrice < 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Maximum price cannot be negative.",
+      });
+    }
+
+    if (
+      hasMinPrice &&
+      hasMaxPrice &&
+      parsedMinPrice > parsedMaxPrice
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Minimum price cannot be greater than maximum price.",
+      });
+    }
+
+    /*
+      Use MongoDB $expr so the filter compares against
+      the actual selling price.
+
+      Valid sale price:
+        salePrice exists
+        salePrice is not null
+        salePrice is lower than regular price
+
+      Otherwise:
+        use regular price.
+    */
+
+    if (hasMinPrice || hasMaxPrice) {
+      const effectivePriceExpression = {
+        $cond: [
+          {
+            $and: [
+              {
+                $ne: [
+                  {
+                    $ifNull: ["$salePrice", null],
+                  },
+                  null,
+                ],
+              },
+              {
+                $lt: [
+                  "$salePrice",
+                  "$price",
+                ],
+              },
+            ],
+          },
+          "$salePrice",
+          "$price",
+        ],
       };
+
+      const priceConditions = [];
+
+      if (hasMinPrice) {
+        priceConditions.push({
+          $gte: [
+            effectivePriceExpression,
+            parsedMinPrice,
+          ],
+        });
+      }
+
+      if (hasMaxPrice) {
+        priceConditions.push({
+          $lte: [
+            effectivePriceExpression,
+            parsedMaxPrice,
+          ],
+        });
+      }
+
+      filter.$expr =
+        priceConditions.length === 1
+          ? priceConditions[0]
+          : {
+              $and: priceConditions,
+            };
     }
 
     // =======================================================
@@ -331,6 +453,16 @@ export const getPublicProducts = async (req, res) => {
         stockStatus = "LOW_STOCK";
       }
 
+      const hasValidSalePrice =
+        product.salePrice !== null &&
+        product.salePrice !== undefined &&
+        Number(product.salePrice) <
+          Number(product.price);
+
+      const finalPrice = hasValidSalePrice
+        ? Number(product.salePrice)
+        : Number(product.price);
+
       return {
         _id: product._id,
         name: product.name,
@@ -355,11 +487,7 @@ export const getPublicProducts = async (req, res) => {
             ? product.salePrice
             : null,
 
-        finalPrice:
-          product.salePrice !== null &&
-          product.salePrice !== undefined
-            ? product.salePrice
-            : product.price,
+        finalPrice,
 
         variants: variants.map((variant) => ({
           _id: variant._id,
@@ -424,16 +552,19 @@ export const getPublicProducts = async (req, res) => {
         search: cleanSearch,
         category: cleanCategory,
         anime: cleanAnime,
+
         minPrice:
           parsedMinPrice !== null &&
           Number.isFinite(parsedMinPrice)
             ? parsedMinPrice
             : null,
+
         maxPrice:
           parsedMaxPrice !== null &&
           Number.isFinite(parsedMaxPrice)
             ? parsedMaxPrice
             : null,
+
         size: cleanSize,
         color: cleanColor,
         sort: String(sort),

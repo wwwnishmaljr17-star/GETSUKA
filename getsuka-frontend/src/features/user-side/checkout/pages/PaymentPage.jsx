@@ -3,8 +3,21 @@ import {
   useMemo,
   useState,
 } from "react";
+
 import { useNavigate } from "react-router-dom";
+
 import { createOrder } from "../../orders/api/orderApi";
+
+import {
+  createRazorpayOrder,
+  verifyRazorpayPayment,
+} from "../api/paymentApi";
+
+import {
+  getWallet,
+} from "../../wallet/api/walletApi";
+
+import { loadRazorpay } from "../utils/loadRazorpay";
 
 const PaymentPage = () => {
   const navigate = useNavigate();
@@ -39,28 +52,7 @@ const PaymentPage = () => {
   // =========================================================
 
   const [paymentMethod, setPaymentMethod] =
-    useState("upi");
-
-  const [upiId, setUpiId] =
-    useState("");
-
-  const [upiVerified, setUpiVerified] =
-    useState(false);
-
-  const [cardNumber, setCardNumber] =
-    useState("");
-
-  const [cardName, setCardName] =
-    useState("");
-
-  const [cardExpiry, setCardExpiry] =
-    useState("");
-
-  const [cardCvv, setCardCvv] =
-    useState("");
-
-  const [selectedBank, setSelectedBank] =
-    useState("");
+    useState("razorpay");
 
   const [error, setError] =
     useState("");
@@ -69,11 +61,28 @@ const PaymentPage = () => {
     useState(false);
 
   // =========================================================
+  // WALLET STATE
+  // =========================================================
+
+  const [walletBalance, setWalletBalance] =
+    useState(0);
+
+  const [walletLoading, setWalletLoading] =
+    useState(false);
+
+  const [walletLoaded, setWalletLoaded] =
+    useState(false);
+
+  // =========================================================
   // CART
   // =========================================================
 
   const [cartItems, setCartItems] =
     useState([]);
+
+  // =========================================================
+  // LOAD CART
+  // =========================================================
 
   useEffect(() => {
     try {
@@ -106,19 +115,12 @@ const PaymentPage = () => {
   }, []);
 
   // =========================================================
-  // LOAD REVIEW DATA
+  // LOAD CHECKOUT DATA
   // =========================================================
 
   useEffect(() => {
     const loadCheckoutData = () => {
       try {
-        /*
-         * IMPORTANT
-         *
-         * ReviewPage stores the final shipping
-         * information here before entering payment.
-         */
-
         const savedReview =
           sessionStorage.getItem(
             "getsukaCheckoutReview"
@@ -142,8 +144,10 @@ const PaymentPage = () => {
           selectedAddress,
         });
 
-        // Restore payment data if user
-        // comes back to this page.
+        // =====================================================
+        // RESTORE PAYMENT METHOD
+        // =====================================================
+
         const savedPayment =
           sessionStorage.getItem(
             "getsukaCheckoutPayment"
@@ -155,32 +159,15 @@ const PaymentPage = () => {
               JSON.parse(savedPayment);
 
             if (
-              paymentData?.paymentMethod
+              paymentData?.paymentMethod ===
+                "razorpay" ||
+              paymentData?.paymentMethod ===
+                "cod" ||
+              paymentData?.paymentMethod ===
+                "wallet"
             ) {
               setPaymentMethod(
                 paymentData.paymentMethod
-              );
-            }
-
-            if (
-              paymentData?.upiId
-            ) {
-              setUpiId(
-                paymentData.upiId
-              );
-            }
-
-            if (
-              paymentData?.upiVerified
-            ) {
-              setUpiVerified(true);
-            }
-
-            if (
-              paymentData?.selectedBank
-            ) {
-              setSelectedBank(
-                paymentData.selectedBank
               );
             }
           } catch (error) {
@@ -204,6 +191,76 @@ const PaymentPage = () => {
 
     loadCheckoutData();
   }, []);
+
+  // =========================================================
+  // LOAD WALLET BALANCE
+  // =========================================================
+
+  useEffect(() => {
+    if (paymentMethod !== "wallet") {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchWalletBalance = async () => {
+      try {
+        setWalletLoading(true);
+        setWalletLoaded(false);
+        setError("");
+
+        const response =
+          await getWallet();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response?.success) {
+          throw new Error(
+            response?.message ||
+              "Unable to load wallet balance."
+          );
+        }
+
+        setWalletBalance(
+          Number(
+            response?.wallet?.balance
+          ) || 0
+        );
+
+        setWalletLoaded(true);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Payment Wallet Error:",
+          error
+        );
+
+        setWalletBalance(0);
+        setWalletLoaded(false);
+
+        setError(
+          error?.response?.data?.message ||
+            error?.message ||
+            "Unable to load wallet balance."
+        );
+      } finally {
+        if (!cancelled) {
+          setWalletLoading(false);
+        }
+      }
+    };
+
+    fetchWalletBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentMethod]);
 
   // =========================================================
   // SUBTOTAL
@@ -279,6 +336,20 @@ const PaymentPage = () => {
       discount +
       tax +
       shippingCost;
+
+  // =========================================================
+  // WALLET VALIDATION
+  // =========================================================
+
+  const walletInsufficient =
+    paymentMethod === "wallet" &&
+    walletLoaded &&
+    walletBalance < total;
+
+  const walletSufficient =
+    paymentMethod === "wallet" &&
+    walletLoaded &&
+    walletBalance >= total;
 
   // =========================================================
   // HELPERS
@@ -420,101 +491,592 @@ const PaymentPage = () => {
       setPaymentMethod(method);
       setError("");
 
-      if (method !== "upi") {
-        setUpiVerified(false);
+      const paymentData = {
+        paymentMethod: method,
+      };
+
+      try {
+        sessionStorage.setItem(
+          "getsukaCheckoutPayment",
+          JSON.stringify(
+            paymentData
+          )
+        );
+      } catch (error) {
+        console.error(
+          "Payment Session Error:",
+          error
+        );
       }
     };
 
   // =========================================================
-  // VERIFY UPI
+  // SAVE PENDING PAYMENT SESSION
   // =========================================================
 
-  const handleVerifyUpi = () => {
-    setError("");
+  const savePendingPayment =
+    ({
+      razorpayOrderId,
+      orderData,
+    }) => {
+      const pendingPayment = {
+        razorpayOrderId,
+        orderData,
+        total,
+        paymentMethod: "razorpay",
+        createdAt:
+          new Date().toISOString(),
 
-    if (!upiId.trim()) {
-      setError(
-        "Please enter your UPI ID."
+        // =====================================================
+        // PRODUCTS RESERVED FOR FAILED PAYMENT RETRY
+        // =====================================================
+        // Keep a snapshot of the cart inside the payment
+        // session. If Razorpay fails, PaymentFailedPage can
+        // temporarily remove these products from the cart and
+        // restore them automatically after the retry window.
+        // =====================================================
+
+        failedCartItems:
+          Array.isArray(cartItems)
+            ? cartItems
+            : [],
+      };
+
+      sessionStorage.setItem(
+        "getsukaPendingPayment",
+        JSON.stringify(
+          pendingPayment
+        )
       );
-
-      return;
-    }
-
-    const upiPattern =
-      /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/;
-
-    if (
-      !upiPattern.test(
-        upiId.trim()
-      )
-    ) {
-      setError(
-        "Please enter a valid UPI ID."
-      );
-
-      return;
-    }
-
-    /*
-     * This is only frontend validation.
-     *
-     * Real UPI verification will be
-     * connected with the payment gateway
-     * and backend later.
-     */
-
-    setUpiVerified(true);
-  };
+    };
 
   // =========================================================
-  // CARD VALIDATION
+  // CLEAR COMPLETED CHECKOUT SESSION
   // =========================================================
 
-  const validateCard = () => {
-    const cleanCardNumber =
-      cardNumber.replace(
-        /\s/g,
-        ""
+  const clearCompletedCheckout =
+    () => {
+      sessionStorage.removeItem(
+        "getsukaCheckoutPayment"
       );
 
-    if (
-      !/^\d{12,19}$/.test(
-        cleanCardNumber
-      )
-    ) {
-      return (
-        "Please enter a valid card number."
+      sessionStorage.removeItem(
+        "getsukaCheckoutReview"
       );
-    }
 
-    if (!cardName.trim()) {
-      return (
-        "Please enter the name on your card."
+      sessionStorage.removeItem(
+        "getsukaCheckoutShipping"
       );
-    }
 
-    if (
-      !/^\d{2}\s*\/\s*\d{2}$/.test(
-        cardExpiry.trim()
-      )
-    ) {
-      return (
-        "Please enter a valid expiry date."
+      sessionStorage.removeItem(
+        "getsukaPendingPayment"
       );
-    }
+    };
 
-    if (
-      !/^\d{3,4}$/.test(
-        cardCvv.trim()
-      )
-    ) {
-      return (
-        "Please enter a valid CVV."
+  // =========================================================
+  // BUILD ORDER ITEMS
+  // =========================================================
+
+  const buildOrderItems =
+    () => {
+      return cartItems.map(
+        (item) => {
+          const productId =
+            item?.productId ||
+            item?.product?._id ||
+            item?._id;
+
+          const variantId =
+            item?.variantId ||
+            item?.variant?._id ||
+            item?.selectedVariantId;
+
+          const quantity =
+            getQuantity(item);
+
+          if (
+            !productId ||
+            !variantId
+          ) {
+            throw new Error(
+              "Product or variant information is missing from the cart."
+            );
+          }
+
+          return {
+            productId,
+            variantId,
+            quantity,
+          };
+        }
       );
-    }
+    };
 
-    return "";
-  };
+  // =========================================================
+  // CREATE ORDER AFTER SUCCESSFUL RAZORPAY PAYMENT
+  // =========================================================
+
+  const completeSuccessfulOrder =
+    async ({
+      orderData,
+      paymentResponse,
+    }) => {
+      const response =
+        await createOrder({
+          ...orderData,
+
+          razorpayOrderId:
+            paymentResponse?.razorpay_order_id,
+
+          razorpayPaymentId:
+            paymentResponse?.razorpay_payment_id,
+
+          paymentStatus:
+            "paid",
+        });
+
+      if (!response?.success) {
+        throw new Error(
+          response?.message ||
+            "Payment was successful, but the order could not be created."
+        );
+      }
+
+      const createdOrder =
+        response?.order ||
+        response?.data ||
+        response;
+
+      sessionStorage.setItem(
+        "getsukaOrder",
+        JSON.stringify(
+          createdOrder
+        )
+      );
+
+      clearCompletedCheckout();
+
+      localStorage.removeItem(
+        "getsukaCart"
+      );
+
+      window.dispatchEvent(
+        new Event(
+          "cartUpdated"
+        )
+      );
+
+      return createdOrder;
+    };
+
+  // =========================================================
+  // OPEN RAZORPAY
+  // =========================================================
+
+  const openRazorpay =
+    async ({
+      orderData,
+    }) => {
+      setError("");
+      setProcessing(true);
+
+      try {
+        const razorpayLoaded =
+          await loadRazorpay();
+
+        if (!razorpayLoaded) {
+          throw new Error(
+            "Unable to load Razorpay. Please check your internet connection and try again."
+          );
+        }
+
+        // =====================================================
+        // ALWAYS CREATE A NEW RAZORPAY ORDER
+        // =====================================================
+
+        const razorpayResponse =
+          await createRazorpayOrder(
+            total
+          );
+
+        if (
+          !razorpayResponse?.success ||
+          !razorpayResponse?.order?.id
+        ) {
+          throw new Error(
+            razorpayResponse?.message ||
+              "Unable to create Razorpay payment order."
+          );
+        }
+
+        const razorpayOrder =
+          razorpayResponse.order;
+
+        const razorpayKey =
+          import.meta.env
+            .VITE_RAZORPAY_KEY_ID;
+
+        if (!razorpayKey) {
+          throw new Error(
+            "Razorpay key is missing. Please check the frontend .env file."
+          );
+        }
+
+        // =====================================================
+        // SAVE PENDING PAYMENT
+        // =====================================================
+
+        savePendingPayment({
+          razorpayOrderId:
+            razorpayOrder.id,
+          orderData,
+        });
+
+        // =====================================================
+        // RAZORPAY OPTIONS
+        // =====================================================
+
+        const options = {
+          key: razorpayKey,
+
+          amount:
+            razorpayOrder.amount,
+
+          currency:
+            razorpayOrder.currency ||
+            "INR",
+
+          name: "GETSUKA",
+
+          description:
+            "GETSUKA Anime Clothing Order",
+
+          order_id:
+            razorpayOrder.id,
+
+          prefill: {
+            name:
+              selectedAddress?.fullName ||
+              "",
+
+            contact:
+              selectedAddress?.phone ||
+              "",
+          },
+
+          notes: {
+            paymentMethod:
+              "razorpay",
+          },
+
+          theme: {
+            color: "#000000",
+          },
+
+          // ===================================================
+          // RAZORPAY SUCCESS
+          // ===================================================
+
+          handler:
+            async (
+              paymentResponse
+            ) => {
+              try {
+                setProcessing(true);
+                setError("");
+
+                // =============================================
+                // VERIFY PAYMENT
+                // =============================================
+
+                const verificationResponse =
+                  await verifyRazorpayPayment(
+                    {
+                      razorpay_order_id:
+                        paymentResponse?.razorpay_order_id,
+
+                      razorpay_payment_id:
+                        paymentResponse?.razorpay_payment_id,
+
+                      razorpay_signature:
+                        paymentResponse?.razorpay_signature,
+                    }
+                  );
+
+                if (
+                  !verificationResponse?.success
+                ) {
+                  throw new Error(
+                    verificationResponse?.message ||
+                      "Payment verification failed. Please try again."
+                  );
+                }
+
+                // =============================================
+                // CREATE ORDER
+                // =============================================
+
+                const createdOrder =
+                  await completeSuccessfulOrder(
+                    {
+                      orderData,
+                      paymentResponse,
+                    }
+                  );
+
+                // =============================================
+                // GO TO ORDER PLACED
+                // =============================================
+
+                setProcessing(false);
+
+                navigate(
+                  "/checkout/order-placed",
+                  {
+                    replace: true,
+
+                    state: {
+                      order:
+                        createdOrder,
+                    },
+                  }
+                );
+              } catch (error) {
+                console.error(
+                  "Razorpay Success Processing Error:",
+                  error
+                );
+
+                setProcessing(false);
+
+                setError(
+                  error?.response
+                    ?.data?.message ||
+                    error?.message ||
+                    "Payment was received, but we could not complete the order. Please contact support before trying again."
+                );
+              }
+            },
+
+          // ===================================================
+          // RAZORPAY CLOSED BY USER
+          // ===================================================
+
+          modal: {
+            ondismiss: () => {
+              setProcessing(false);
+
+              navigate(
+                "/checkout/payment-failed",
+                {
+                  replace: true,
+
+                  state: {
+                    message:
+                      "You closed the payment window before the payment was completed.",
+
+                    paymentMethod:
+                      "razorpay",
+                  },
+                }
+              );
+            },
+          },
+        };
+
+        const razorpay =
+          new window.Razorpay(
+            options
+          );
+
+        // =====================================================
+        // ACTUAL RAZORPAY PAYMENT FAILURE
+        // =====================================================
+
+        razorpay.on(
+          "payment.failed",
+          (response) => {
+            console.error(
+              "Razorpay Payment Failed:",
+              response
+            );
+
+            // =================================================
+            // SAVE FAILED PAYMENT PRODUCTS
+            // =================================================
+            // The cart is temporarily removed while the user
+            // has the 2-minute retry window.
+            // PaymentFailedPage will restore these products
+            // automatically if the timer expires.
+            // =================================================
+
+            try {
+              const storedPendingPayment =
+                sessionStorage.getItem(
+                  "getsukaPendingPayment"
+                );
+
+              const pendingPayment =
+                storedPendingPayment
+                  ? JSON.parse(
+                      storedPendingPayment
+                    )
+                  : {};
+
+              const failedPayment = {
+                ...pendingPayment,
+
+                paymentStatus:
+                  "failed",
+
+                paymentMethod:
+                  "razorpay",
+
+                failureMessage:
+                  response?.error
+                    ?.description ||
+                  response?.error
+                    ?.reason ||
+                  "Your payment could not be completed. Please try again.",
+
+                failedCartItems:
+                  Array.isArray(
+                    pendingPayment?.failedCartItems
+                  ) &&
+                  pendingPayment.failedCartItems.length > 0
+                    ? pendingPayment.failedCartItems
+                    : Array.isArray(cartItems)
+                    ? cartItems
+                    : [],
+              };
+
+              sessionStorage.setItem(
+                "getsukaPendingPayment",
+                JSON.stringify(
+                  failedPayment
+                )
+              );
+
+              sessionStorage.setItem(
+                "getsukaFailedPayment",
+                JSON.stringify(
+                  failedPayment
+                )
+              );
+
+              // -----------------------------------------------
+              // TEMPORARILY REMOVE PRODUCTS FROM CART
+              // -----------------------------------------------
+
+              localStorage.removeItem(
+                "getsukaCart"
+              );
+
+              window.dispatchEvent(
+                new Event(
+                  "cartUpdated"
+                )
+              );
+            } catch (storageError) {
+              console.error(
+                "Failed Payment Cart Session Error:",
+                storageError
+              );
+            }
+
+            setProcessing(false);
+
+            navigate(
+              "/checkout/payment-failed",
+              {
+                replace: true,
+
+                state: {
+                  message:
+                    response?.error
+                      ?.description ||
+                    response?.error
+                      ?.reason ||
+                    "Your payment could not be completed. Please try again.",
+
+                  paymentMethod:
+                    "razorpay",
+                },
+              }
+            );
+          }
+        );
+
+        razorpay.open();
+      } catch (error) {
+        console.error(
+          "Razorpay Initialization Error:",
+          error
+        );
+
+        setProcessing(false);
+
+        setError(
+          error?.response
+            ?.data?.message ||
+            error?.message ||
+            "Unable to start the payment. Please try again."
+        );
+      }
+    };
+
+  // =========================================================
+  // COMPLETE WALLET ORDER
+  // =========================================================
+
+  const completeWalletOrder =
+    async ({
+      orderData,
+    }) => {
+      const response =
+        await createOrder({
+          ...orderData,
+
+          paymentMethod:
+            "wallet",
+
+          paymentStatus:
+            "paid",
+        });
+
+      if (!response?.success) {
+        throw new Error(
+          response?.message ||
+            "Unable to create wallet order."
+        );
+      }
+
+      const createdOrder =
+        response?.order ||
+        response?.data ||
+        response;
+
+      sessionStorage.setItem(
+        "getsukaOrder",
+        JSON.stringify(
+          createdOrder
+        )
+      );
+
+      clearCompletedCheckout();
+
+      localStorage.removeItem(
+        "getsukaCart"
+      );
+
+      window.dispatchEvent(
+        new Event(
+          "cartUpdated"
+        )
+      );
+
+      return createdOrder;
+    };
 
   // =========================================================
   // PLACE ORDER
@@ -551,16 +1113,37 @@ const PaymentPage = () => {
       }
 
       // -------------------------------------------------------
-      // UPI
+      // WALLET BALANCE
       // -------------------------------------------------------
 
       if (
-        paymentMethod ===
-        "upi"
+        paymentMethod === "wallet"
       ) {
-        if (!upiVerified) {
+        if (walletLoading) {
           setError(
-            "Please verify your UPI ID."
+            "Please wait while your wallet balance is loading."
+          );
+
+          return;
+        }
+
+        if (!walletLoaded) {
+          setError(
+            "Unable to verify your wallet balance. Please try again."
+          );
+
+          return;
+        }
+
+        if (
+          walletBalance < total
+        ) {
+          setError(
+            `Insufficient wallet balance. You need ${formatPrice(
+              total
+            )}, but your wallet has only ${formatPrice(
+              walletBalance
+            )}.`
           );
 
           return;
@@ -568,93 +1151,74 @@ const PaymentPage = () => {
       }
 
       // -------------------------------------------------------
-      // CARD
+      // BUILD ORDER ITEMS
       // -------------------------------------------------------
 
-      if (
-        paymentMethod ===
-        "card"
-      ) {
-        const cardError =
-          validateCard();
+      let orderItems;
 
-        if (cardError) {
-          setError(
-            cardError
-          );
+      try {
+        orderItems =
+          buildOrderItems();
+      } catch (error) {
+        console.error(
+          "Order Items Error:",
+          error
+        );
 
-          return;
-        }
+        setError(
+          error?.message ||
+            "Unable to prepare your order."
+        );
+
+        return;
       }
 
       // -------------------------------------------------------
-      // NET BANKING
+      // ORDER DATA
       // -------------------------------------------------------
 
-      if (
-        paymentMethod ===
-        "netbanking"
-      ) {
-        if (!selectedBank) {
-          setError(
-            "Please select your bank."
-          );
+      const orderData = {
+        items: orderItems,
 
-          return;
-        }
-      }
-
-      // -------------------------------------------------------
-      // SAVE PAYMENT DATA
-      // -------------------------------------------------------
-
-      const paymentData = {
-        paymentMethod,
-
-        upiId:
-          paymentMethod ===
-          "upi"
-            ? upiId.trim()
-            : "",
-
-        upiVerified:
-          paymentMethod ===
-          "upi"
-            ? upiVerified
-            : false,
-
-        selectedBank:
-          paymentMethod ===
-          "netbanking"
-            ? selectedBank
-            : "",
-
-        selectedAddress,
+        addressId:
+          selectedAddress?._id ||
+          selectedAddress?.id,
 
         deliveryMethod,
 
-        shippingCharge:
-          shippingCost,
+        paymentMethod,
 
-        subtotal,
+        couponCode:
+          checkoutData?.couponCode ||
+          "",
 
         discount,
 
         tax,
-
-        total,
       };
+
+      // -------------------------------------------------------
+      // SAVE PAYMENT SESSION
+      // -------------------------------------------------------
 
       try {
         sessionStorage.setItem(
           "getsukaCheckoutPayment",
-          JSON.stringify(
-            paymentData
-          )
+          JSON.stringify({
+            paymentMethod,
+            selectedAddress,
+            deliveryMethod,
+            shippingCharge:
+              shippingCost,
+            subtotal,
+            discount,
+            tax,
+            total,
+          })
         );
       } catch (error) {
         console.error(
-          "Save Payment Data Error:",
+          "Save Payment Session Error:",
           error
         );
 
@@ -665,105 +1229,139 @@ const PaymentPage = () => {
         return;
       }
 
-      /*
-       * BACKEND ORDER CREATION
-       *
-       * We will connect this button to the
-       * actual order API next.
-       *
-       * For now, the complete frontend
-       * checkout flow continues to success.
-       */
+      // =======================================================
+      // WALLET
+      // =======================================================
 
-      try {
-        setProcessing(true);
+      if (
+        paymentMethod === "wallet"
+      ) {
+        try {
+          setProcessing(true);
 
-        const orderItems = cartItems.map((item) => {
-          const productId =
-            item?.productId ||
-            item?.product?._id ||
-            item?._id;
+          const createdOrder =
+            await completeWalletOrder({
+              orderData,
+            });
 
-          const variantId =
-            item?.variantId ||
-            item?.variant?._id ||
-            item?.selectedVariantId;
+          setProcessing(false);
 
-          const quantity = getQuantity(item);
+          navigate(
+            "/checkout/order-placed",
+            {
+              replace: true,
 
-          if (!productId || !variantId) {
+              state: {
+                order:
+                  createdOrder,
+              },
+            }
+          );
+        } catch (error) {
+          console.error(
+            "Wallet Order Error:",
+            error
+          );
+
+          setError(
+            error?.response?.data
+              ?.message ||
+              error?.message ||
+              "Something went wrong while placing your wallet order."
+          );
+
+          setProcessing(false);
+        }
+
+        return;
+      }
+
+      // =======================================================
+      // CASH ON DELIVERY
+      // =======================================================
+
+      if (
+        paymentMethod ===
+        "cod"
+      ) {
+        try {
+          setProcessing(true);
+
+          const response =
+            await createOrder(
+              orderData
+            );
+
+          if (!response?.success) {
             throw new Error(
-              "Product or variant information is missing from the cart."
+              response?.message ||
+                "Unable to create your order."
             );
           }
 
-          return {
-            productId,
-            variantId,
-            quantity,
-          };
-        });
+          const createdOrder =
+            response?.order ||
+            response?.data ||
+            response;
 
-        const orderData = {
-          items: orderItems,
-          addressId:
-            selectedAddress?._id ||
-            selectedAddress?.id,
-          deliveryMethod,
-          paymentMethod,
-          couponCode:
-            checkoutData?.couponCode || "",
-          discount,
-          tax,
-        };
-
-        const response = await createOrder(orderData);
-
-        if (!response?.success) {
-          throw new Error(
-            response?.message ||
-              "Unable to create your order."
+          sessionStorage.setItem(
+            "getsukaOrder",
+            JSON.stringify(
+              createdOrder
+            )
           );
+
+          clearCompletedCheckout();
+
+          localStorage.removeItem(
+            "getsukaCart"
+          );
+
+          window.dispatchEvent(
+            new Event(
+              "cartUpdated"
+            )
+          );
+
+          setProcessing(false);
+
+          navigate(
+            "/checkout/order-placed",
+            {
+              replace: true,
+
+              state: {
+                order:
+                  createdOrder,
+              },
+            }
+          );
+        } catch (error) {
+          console.error(
+            "COD Order Error:",
+            error
+          );
+
+          setError(
+            error?.response?.data
+              ?.message ||
+              error?.message ||
+              "Something went wrong while placing your order."
+          );
+
+          setProcessing(false);
         }
 
-        const createdOrder =
-          response?.order ||
-          response?.data ||
-          response;
-
-        sessionStorage.setItem(
-          "getsukaOrder",
-          JSON.stringify(createdOrder)
-        );
-
-        localStorage.removeItem("getsukaCart");
-
-        window.dispatchEvent(
-          new Event("cartUpdated")
-        );
-
-        navigate(
-          "/checkout/order-placed",
-          {
-            state: {
-              order: createdOrder,
-            },
-          }
-        );
-      } catch (error) {
-        console.error(
-          "Place Order Error:",
-          error
-        );
-
-        setError(
-          error?.response?.data?.message ||
-            error?.message ||
-            "Something went wrong while placing your order."
-        );
-
-        setProcessing(false);
+        return;
       }
+
+      // =======================================================
+      // RAZORPAY
+      // =======================================================
+
+      await openRazorpay({
+        orderData,
+      });
     };
 
   // =========================================================
@@ -784,11 +1382,9 @@ const PaymentPage = () => {
   if (checkoutLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
-
         <p className="text-[9px] uppercase tracking-[0.3em] text-white/40">
           LOADING PAYMENT...
         </p>
-
       </div>
     );
   }
@@ -803,10 +1399,9 @@ const PaymentPage = () => {
   ) {
     return (
       <div className="min-h-screen bg-black text-white">
+        <div className="flex min-h-screen flex-col items-center justify-center px-6">
 
-        <div className="flex min-h-screen flex-col items-center justify-center">
-
-          <p className="text-[9px] uppercase tracking-[0.3em] text-white/40">
+          <p className="text-center text-[9px] uppercase tracking-[0.3em] text-white/40">
             CHECKOUT INFORMATION
             MISSING
           </p>
@@ -815,7 +1410,10 @@ const PaymentPage = () => {
             type="button"
             onClick={() =>
               navigate(
-                "/checkout"
+                "/checkout",
+                {
+                  replace: true,
+                }
               )
             }
             className="mt-6 border border-white px-7 py-3 text-[8px] uppercase tracking-[0.2em] transition hover:bg-white hover:text-black"
@@ -824,7 +1422,6 @@ const PaymentPage = () => {
           </button>
 
         </div>
-
       </div>
     );
   }
@@ -842,9 +1439,9 @@ const PaymentPage = () => {
 
       <div className="border-b border-white/10">
 
-        <div className="mx-auto max-w-[1500px] px-[32px] py-[24px]">
+        <div className="mx-auto max-w-[1500px] px-5 py-5 sm:px-8 sm:py-6">
 
-          <div className="flex items-center gap-4 text-[9px] tracking-[0.22em]">
+          <div className="flex flex-wrap items-center gap-3 text-[8px] tracking-[0.22em] sm:gap-4 sm:text-[9px]">
 
             <span className="text-white">
               CART
@@ -884,26 +1481,26 @@ const PaymentPage = () => {
           MAIN
       ===================================================== */}
 
-      <main className="bg-black px-[32px] py-[55px]">
+      <main className="bg-black px-5 py-10 sm:px-8 sm:py-[55px]">
 
         <div className="mx-auto max-w-[1500px]">
 
           {/* PAGE TITLE */}
 
-          <div className="mb-[48px]">
+          <div className="mb-10 sm:mb-[48px]">
 
-            <p className="mb-[14px] text-[9px] tracking-[0.35em] text-white/35">
+            <p className="mb-[14px] text-[8px] tracking-[0.35em] text-white/35 sm:text-[9px]">
               GETSUKA CHECKOUT
             </p>
 
-            <h1 className="text-[30px] font-light tracking-[0.12em]">
+            <h1 className="text-[25px] font-light tracking-[0.12em] sm:text-[30px]">
               PAYMENT
             </h1>
 
-            <p className="mt-[12px] text-[11px] text-white/35">
-              Select your preferred
-              payment method to
-              complete your order.
+            <p className="mt-[12px] max-w-[450px] text-[10px] leading-6 text-white/35 sm:text-[11px]">
+              Choose a secure payment
+              method to complete your
+              order.
             </p>
 
           </div>
@@ -911,9 +1508,9 @@ const PaymentPage = () => {
           {/* ERROR */}
 
           {error && (
-            <div className="mb-[30px] border border-red-500/40 bg-black px-[20px] py-[14px]">
+            <div className="mb-[30px] border border-red-500/40 bg-black px-4 py-4 sm:px-[20px]">
 
-              <p className="text-[9px] tracking-[0.08em] text-red-500">
+              <p className="text-[9px] leading-5 tracking-[0.05em] text-red-500">
                 {error}
               </p>
 
@@ -922,7 +1519,7 @@ const PaymentPage = () => {
 
           {/* CONTENT */}
 
-          <div className="grid grid-cols-[1fr_390px] gap-[60px]">
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_390px] lg:gap-[60px]">
 
             {/* =================================================
                 LEFT
@@ -934,30 +1531,26 @@ const PaymentPage = () => {
 
               <div>
 
-                <div className="mb-[22px] flex items-center justify-between">
+                <div className="mb-[22px]">
 
-                  <div>
+                  <p className="mb-[8px] text-[9px] tracking-[0.25em] text-white/30">
+                    STEP 04
+                  </p>
 
-                    <p className="mb-[8px] text-[9px] tracking-[0.25em] text-white/30">
-                      STEP 04
-                    </p>
-
-                    <h2 className="text-[17px] font-light tracking-[0.12em]">
-                      PAYMENT METHOD
-                    </h2>
-
-                  </div>
+                  <h2 className="text-[16px] font-light tracking-[0.12em] sm:text-[17px]">
+                    PAYMENT METHOD
+                  </h2>
 
                 </div>
 
                 {/* =================================================
-                    UPI
+                    RAZORPAY
                 ================================================= */}
 
                 <div
                   className={`border ${
                     paymentMethod ===
-                    "upi"
+                    "razorpay"
                       ? "border-red-500"
                       : "border-white/10"
                   }`}
@@ -967,93 +1560,59 @@ const PaymentPage = () => {
                     type="button"
                     onClick={() =>
                       handlePaymentMethodChange(
-                        "upi"
+                        "razorpay"
                       )
                     }
-                    className="flex w-full items-center justify-between px-[24px] py-[20px]"
+                    className="flex w-full items-center justify-between px-4 py-5 text-left sm:px-[24px] sm:py-[22px]"
                   >
 
-                    <div className="flex items-center gap-[15px]">
+                    <div className="flex min-w-0 items-center gap-[15px]">
 
                       <span
-                        className={`flex h-[12px] w-[12px] items-center justify-center rounded-full border ${
+                        className={`flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border ${
                           paymentMethod ===
-                          "upi"
+                          "razorpay"
                             ? "border-red-500"
                             : "border-white/30"
                         }`}
                       >
 
                         {paymentMethod ===
-                          "upi" && (
-                          <span className="h-[5px] w-[5px] rounded-full bg-red-500" />
+                          "razorpay" && (
+                          <span className="h-[6px] w-[6px] rounded-full bg-red-500" />
                         )}
 
                       </span>
 
-                      <span className="text-[10px] tracking-[0.12em]">
-                        UPI
-                      </span>
+                      <div className="min-w-0">
+
+                        <span className="block text-[10px] tracking-[0.12em]">
+                          RAZORPAY
+                        </span>
+
+                        <span className="mt-[5px] block text-[8px] text-white/30">
+                          UPI · CARDS · NET BANKING · MORE
+                        </span>
+
+                      </div>
 
                     </div>
 
-                    <span className="text-[8px] tracking-[0.15em] text-white/30">
-                      UPI
+                    <span className="ml-3 shrink-0 text-[7px] tracking-[0.15em] text-white/30 sm:text-[8px]">
+                      SECURE
                     </span>
 
                   </button>
 
                   {paymentMethod ===
-                    "upi" && (
-                    <div className="border-t border-white/10 px-[24px] py-[20px]">
+                    "razorpay" && (
+                    <div className="border-t border-white/10 px-4 py-4 sm:px-[24px] sm:py-[18px]">
 
-                      <p className="mb-[10px] text-[9px] tracking-[0.18em] text-white/30">
-                        UPI ID
-                      </p>
-
-                      <div className="flex gap-[10px]">
-
-                        <input
-                          type="text"
-                          value={upiId}
-                          onChange={(e) => {
-                            setUpiId(
-                              e.target.value
-                            );
-
-                            setUpiVerified(
-                              false
-                            );
-
-                            setError("");
-                          }}
-                          placeholder="example@upi"
-                          className="h-[42px] flex-1 border border-white/15 bg-black px-[14px] text-[10px] text-white outline-none placeholder:text-white/20 focus:border-red-500"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={
-                            handleVerifyUpi
-                          }
-                          className={`h-[42px] border px-[20px] text-[8px] tracking-[0.15em] transition ${
-                            upiVerified
-                              ? "border-red-500 text-red-500"
-                              : "border-white/40 hover:bg-white hover:text-black"
-                          }`}
-                        >
-                          {upiVerified
-                            ? "VERIFIED"
-                            : "VERIFY"}
-                        </button>
-
-                      </div>
-
-                      <p className="mt-[10px] text-[8px] text-white/25">
-                        UPI verification
-                        will be connected
-                        with the payment
-                        gateway later.
+                      <p className="text-[8px] leading-[1.8] text-white/35">
+                        You will be redirected
+                        to Razorpay Checkout
+                        to securely complete
+                        your payment.
                       </p>
 
                     </div>
@@ -1062,13 +1621,13 @@ const PaymentPage = () => {
                 </div>
 
                 {/* =================================================
-                    CARD
+                    WALLET
                 ================================================= */}
 
                 <div
                   className={`mt-[8px] border ${
                     paymentMethod ===
-                    "card"
+                    "wallet"
                       ? "border-red-500"
                       : "border-white/10"
                   }`}
@@ -1078,218 +1637,133 @@ const PaymentPage = () => {
                     type="button"
                     onClick={() =>
                       handlePaymentMethodChange(
-                        "card"
+                        "wallet"
                       )
                     }
-                    className="flex w-full items-center justify-between px-[24px] py-[20px]"
+                    className="flex w-full items-center justify-between px-4 py-5 text-left sm:px-[24px] sm:py-[22px]"
                   >
 
-                    <div className="flex items-center gap-[15px]">
+                    <div className="flex min-w-0 items-center gap-[15px]">
 
                       <span
-                        className={`flex h-[12px] w-[12px] items-center justify-center rounded-full border ${
+                        className={`flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border ${
                           paymentMethod ===
-                          "card"
+                          "wallet"
                             ? "border-red-500"
                             : "border-white/30"
                         }`}
                       >
 
                         {paymentMethod ===
-                          "card" && (
-                          <span className="h-[5px] w-[5px] rounded-full bg-red-500" />
+                          "wallet" && (
+                          <span className="h-[6px] w-[6px] rounded-full bg-red-500" />
                         )}
 
                       </span>
 
-                      <span className="text-[10px] tracking-[0.12em]">
-                        CREDIT / DEBIT CARD
-                      </span>
+                      <div className="min-w-0">
+
+                        <span className="block text-[10px] tracking-[0.12em]">
+                          GETSUKA WALLET
+                        </span>
+
+                        <span className="mt-[5px] block text-[8px] text-white/30">
+                          PAY USING YOUR WALLET BALANCE
+                        </span>
+
+                      </div>
 
                     </div>
 
-                    <span className="text-white/30">
-                      ▤
+                    <span className="ml-3 shrink-0 text-[7px] tracking-[0.15em] text-white/30 sm:text-[8px]">
+                      WALLET
                     </span>
 
                   </button>
 
                   {paymentMethod ===
-                    "card" && (
-                    <div className="border-t border-white/10 px-[24px] py-[20px]">
+                    "wallet" && (
+                    <div className="border-t border-white/10 px-4 py-5 sm:px-[24px] sm:py-[20px]">
 
-                      <div className="grid gap-[10px]">
+                      {walletLoading ? (
+                        <div>
 
-                        <input
-                          type="text"
-                          value={
-                            cardNumber
-                          }
-                          onChange={(e) =>
-                            setCardNumber(
-                              e.target.value
-                            )
-                          }
-                          placeholder="CARD NUMBER"
-                          maxLength={19}
-                          inputMode="numeric"
-                          className="h-[42px] border border-white/15 bg-black px-[14px] text-[10px] outline-none placeholder:text-white/20 focus:border-red-500"
-                        />
-
-                        <input
-                          type="text"
-                          value={
-                            cardName
-                          }
-                          onChange={(e) =>
-                            setCardName(
-                              e.target.value
-                            )
-                          }
-                          placeholder="NAME ON CARD"
-                          className="h-[42px] border border-white/15 bg-black px-[14px] text-[10px] uppercase outline-none placeholder:text-white/20 focus:border-red-500"
-                        />
-
-                        <div className="grid grid-cols-2 gap-[10px]">
-
-                          <input
-                            type="text"
-                            value={
-                              cardExpiry
-                            }
-                            onChange={(e) =>
-                              setCardExpiry(
-                                e.target.value
-                              )
-                            }
-                            placeholder="MM / YY"
-                            maxLength={7}
-                            className="h-[42px] border border-white/15 bg-black px-[14px] text-[10px] outline-none placeholder:text-white/20 focus:border-red-500"
-                          />
-
-                          <input
-                            type="password"
-                            value={
-                              cardCvv
-                            }
-                            onChange={(e) =>
-                              setCardCvv(
-                                e.target.value
-                              )
-                            }
-                            placeholder="CVV"
-                            maxLength={4}
-                            inputMode="numeric"
-                            className="h-[42px] border border-white/15 bg-black px-[14px] text-[10px] outline-none placeholder:text-white/20 focus:border-red-500"
-                          />
+                          <p className="text-[8px] tracking-[0.16em] text-white/35">
+                            CHECKING WALLET BALANCE...
+                          </p>
 
                         </div>
+                      ) : (
+                        <div>
 
-                      </div>
+                          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
 
-                      <p className="mt-[10px] text-[8px] text-white/25">
-                        Card payment will
-                        be processed through
-                        the payment gateway.
-                      </p>
+                            <div>
 
-                    </div>
-                  )}
+                              <p className="mb-[7px] text-[8px] tracking-[0.2em] text-white/30">
+                                AVAILABLE BALANCE
+                              </p>
 
-                </div>
+                              <p
+                                className={`text-[24px] font-light tracking-[0.03em] ${
+                                  walletInsufficient
+                                    ? "text-red-500"
+                                    : "text-white"
+                                }`}
+                              >
+                                {formatPrice(
+                                  walletBalance
+                                )}
+                              </p>
 
-                {/* =================================================
-                    NET BANKING
-                ================================================= */}
+                            </div>
 
-                <div
-                  className={`mt-[8px] border ${
-                    paymentMethod ===
-                    "netbanking"
-                      ? "border-red-500"
-                      : "border-white/10"
-                  }`}
-                >
+                            <div>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handlePaymentMethodChange(
-                        "netbanking"
-                      )
-                    }
-                    className="flex w-full items-center justify-between px-[24px] py-[20px]"
-                  >
+                              <p className="mb-[7px] text-[8px] tracking-[0.2em] text-white/30">
+                                ORDER TOTAL
+                              </p>
 
-                    <div className="flex items-center gap-[15px]">
+                              <p className="text-[16px] font-light">
+                                {formatPrice(
+                                  total
+                                )}
+                              </p>
 
-                      <span
-                        className={`flex h-[12px] w-[12px] items-center justify-center rounded-full border ${
-                          paymentMethod ===
-                          "netbanking"
-                            ? "border-red-500"
-                            : "border-white/30"
-                        }`}
-                      >
+                            </div>
 
-                        {paymentMethod ===
-                          "netbanking" && (
-                          <span className="h-[5px] w-[5px] rounded-full bg-red-500" />
-                        )}
+                          </div>
 
-                      </span>
+                          {walletInsufficient && (
+                            <div className="mt-5 border border-red-500/30 bg-red-500/5 px-4 py-3">
 
-                      <span className="text-[10px] tracking-[0.12em]">
-                        NET BANKING
-                      </span>
+                              <p className="text-[8px] leading-[1.8] tracking-[0.05em] text-red-500">
+                                INSUFFICIENT WALLET BALANCE.
+                                YOU NEED{" "}
+                                {formatPrice(
+                                  total -
+                                    walletBalance
+                                )}{" "}
+                                MORE TO COMPLETE THIS ORDER.
+                              </p>
 
-                    </div>
+                            </div>
+                          )}
 
-                    <span className="text-white/30">
-                      ♜
-                    </span>
+                          {walletSufficient && (
+                            <div className="mt-5 border border-white/10 px-4 py-3">
 
-                  </button>
+                              <p className="text-[8px] leading-[1.8] tracking-[0.05em] text-white/35">
+                                YOUR WALLET BALANCE IS
+                                SUFFICIENT TO COMPLETE
+                                THIS ORDER.
+                              </p>
 
-                  {paymentMethod ===
-                    "netbanking" && (
-                    <div className="border-t border-white/10 px-[24px] py-[20px]">
+                            </div>
+                          )}
 
-                      <select
-                        value={
-                          selectedBank
-                        }
-                        onChange={(e) => {
-                          setSelectedBank(
-                            e.target.value
-                          );
-
-                          setError("");
-                        }}
-                        className="h-[42px] w-full border border-white/15 bg-black px-[14px] text-[10px] text-white/70 outline-none focus:border-red-500"
-                      >
-
-                        <option value="">
-                          SELECT YOUR BANK
-                        </option>
-
-                        <option value="sbi">
-                          STATE BANK OF INDIA
-                        </option>
-
-                        <option value="hdfc">
-                          HDFC BANK
-                        </option>
-
-                        <option value="icici">
-                          ICICI BANK
-                        </option>
-
-                        <option value="axis">
-                          AXIS BANK
-                        </option>
-
-                      </select>
+                        </div>
+                      )}
 
                     </div>
                   )}
@@ -1297,7 +1771,7 @@ const PaymentPage = () => {
                 </div>
 
                 {/* =================================================
-                    COD
+                    CASH ON DELIVERY
                 ================================================= */}
 
                 <div
@@ -1316,13 +1790,13 @@ const PaymentPage = () => {
                         "cod"
                       )
                     }
-                    className="flex w-full items-center justify-between px-[24px] py-[20px]"
+                    className="flex w-full items-center justify-between px-4 py-5 text-left sm:px-[24px] sm:py-[22px]"
                   >
 
-                    <div className="flex items-center gap-[15px]">
+                    <div className="flex min-w-0 items-center gap-[15px]">
 
                       <span
-                        className={`flex h-[12px] w-[12px] items-center justify-center rounded-full border ${
+                        className={`flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border ${
                           paymentMethod ===
                           "cod"
                             ? "border-red-500"
@@ -1332,18 +1806,26 @@ const PaymentPage = () => {
 
                         {paymentMethod ===
                           "cod" && (
-                          <span className="h-[5px] w-[5px] rounded-full bg-red-500" />
+                          <span className="h-[6px] w-[6px] rounded-full bg-red-500" />
                         )}
 
                       </span>
 
-                      <span className="text-[10px] tracking-[0.12em]">
-                        CASH ON DELIVERY
-                      </span>
+                      <div className="min-w-0">
+
+                        <span className="block text-[10px] tracking-[0.12em]">
+                          CASH ON DELIVERY
+                        </span>
+
+                        <span className="mt-[5px] block text-[8px] text-white/30">
+                          PAY WHEN YOUR ORDER ARRIVES
+                        </span>
+
+                      </div>
 
                     </div>
 
-                    <span className="text-white/30">
+                    <span className="ml-3 shrink-0 text-white/30">
                       ▣
                     </span>
 
@@ -1351,7 +1833,7 @@ const PaymentPage = () => {
 
                   {paymentMethod ===
                     "cod" && (
-                    <div className="border-t border-white/10 px-[24px] py-[16px]">
+                    <div className="border-t border-white/10 px-4 py-4 sm:px-[24px] sm:py-[16px]">
 
                       <p className="text-[8px] text-white/30">
                         Pay for your order
@@ -1385,11 +1867,11 @@ const PaymentPage = () => {
 
               {/* HEADER */}
 
-              <div className="border-b border-white/10 px-[26px] py-[24px]">
+              <div className="border-b border-white/10 px-5 py-5 sm:px-[26px] sm:py-[24px]">
 
                 <div className="flex items-center justify-between">
 
-                  <h2 className="text-[15px] font-light tracking-[0.15em]">
+                  <h2 className="text-[14px] font-light tracking-[0.15em] sm:text-[15px]">
                     ORDER SUMMARY
                   </h2>
 
@@ -1407,7 +1889,7 @@ const PaymentPage = () => {
 
               {/* PRODUCTS */}
 
-              <div className="max-h-[330px] overflow-y-auto px-[26px]">
+              <div className="max-h-[330px] overflow-y-auto px-5 sm:px-[26px]">
 
                 {cartItems.length ===
                 0 ? (
@@ -1424,6 +1906,7 @@ const PaymentPage = () => {
                       item,
                       index
                     ) => {
+
                       const image =
                         getProductImage(
                           item
@@ -1455,9 +1938,7 @@ const PaymentPage = () => {
 
                             {image ? (
                               <img
-                                src={
-                                  image
-                                }
+                                src={image}
                                 alt={getProductName(
                                   item
                                 )}
@@ -1521,7 +2002,7 @@ const PaymentPage = () => {
 
               {/* TOTALS */}
 
-              <div className="px-[26px] py-[24px]">
+              <div className="px-5 py-5 sm:px-[26px] sm:py-[24px]">
 
                 <div className="flex items-center justify-between">
 
@@ -1618,6 +2099,36 @@ const PaymentPage = () => {
 
                 </div>
 
+                {/* WALLET BALANCE MINI SUMMARY */}
+
+                {paymentMethod ===
+                  "wallet" &&
+                  walletLoaded && (
+                    <div className="mt-5 border-t border-white/10 pt-5">
+
+                      <div className="flex items-center justify-between">
+
+                        <span className="text-[8px] tracking-[0.12em] text-white/35">
+                          WALLET BALANCE
+                        </span>
+
+                        <span
+                          className={`text-[9px] ${
+                            walletInsufficient
+                              ? "text-red-500"
+                              : "text-white"
+                          }`}
+                        >
+                          {formatPrice(
+                            walletBalance
+                          )}
+                        </span>
+
+                      </div>
+
+                    </div>
+                  )}
+
                 {/* PLACE ORDER */}
 
                 <button
@@ -1626,19 +2137,42 @@ const PaymentPage = () => {
                     handlePlaceOrder
                   }
                   disabled={
-                    processing
+                    processing ||
+                    walletLoading ||
+                    walletInsufficient ||
+                    (paymentMethod ===
+                      "wallet" &&
+                      !walletLoaded)
                   }
                   className="mt-[28px] flex h-[50px] w-full items-center justify-center gap-[10px] bg-white text-[9px] font-medium tracking-[0.2em] text-black transition hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
+
                   {processing
                     ? "PROCESSING..."
+                    : paymentMethod ===
+                      "razorpay"
+                    ? "PAY WITH RAZORPAY"
+                    : paymentMethod ===
+                      "wallet"
+                    ? walletInsufficient
+                      ? "INSUFFICIENT BALANCE"
+                      : walletLoading
+                      ? "CHECKING WALLET..."
+                      : "PAY WITH WALLET"
                     : "PLACE ORDER"}
 
-                  {!processing && (
-                    <span>
-                      →
-                    </span>
-                  )}
+                  {!processing &&
+                    !walletInsufficient &&
+                    !walletLoading &&
+                    !(
+                      paymentMethod ===
+                      "wallet" &&
+                      !walletLoaded
+                    ) && (
+                      <span>
+                        →
+                      </span>
+                    )}
 
                 </button>
 
@@ -1649,7 +2183,10 @@ const PaymentPage = () => {
                   onClick={
                     handleBackToReview
                   }
-                  className="mt-[16px] block w-full text-center text-[8px] tracking-[0.18em] text-white/35 transition hover:text-white"
+                  disabled={
+                    processing
+                  }
+                  className="mt-[16px] block w-full text-center text-[8px] tracking-[0.18em] text-white/35 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                 >
                   ← BACK TO REVIEW
                 </button>

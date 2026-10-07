@@ -192,7 +192,7 @@ const UserAccountPage = () => {
   // ============================================
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-black text-white overflow-x-hidden">
 
       <div className="w-full max-w-[1400px] mx-auto min-h-[calc(100vh-78px)] flex flex-col lg:flex-row">
 
@@ -478,7 +478,7 @@ const UserAccountPage = () => {
               PROFILE CARD
           ==================================== */}
 
-          <div className="border border-white/10 bg-[#0d0d0d] p-5 sm:p-6 lg:p-8">
+          <div className="border border-white/10  p-5 sm:p-6 lg:p-8">
 
             {/* PROFILE HEADER */}
 

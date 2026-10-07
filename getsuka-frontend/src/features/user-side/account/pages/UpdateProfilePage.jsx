@@ -1090,7 +1090,7 @@ const UpdateProfilePage = () => {
   // ============================================
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-black text-white overflow-x-hidden">
 
       <main className="min-h-[calc(100vh-85px)] w-full max-w-[1400px] mx-auto flex flex-col lg:flex-row">
 
@@ -1352,7 +1352,7 @@ const UpdateProfilePage = () => {
 
           <form
             onSubmit={handleSave}
-            className="border border-white/10 bg-[#0b0b0b]"
+            className="border border-white/10 "
           >
 
             {/* PROFILE HEADER */}
@@ -1561,7 +1561,7 @@ const UpdateProfilePage = () => {
           ==================================== */}
 
           {!isGoogleUser && (
-            <div className="border border-white/10 bg-[#0b0b0b] mt-5 px-5 sm:px-9 py-6 sm:py-7">
+            <div className="border border-white/10  mt-5 px-5 sm:px-9 py-6 sm:py-7">
 
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
 
