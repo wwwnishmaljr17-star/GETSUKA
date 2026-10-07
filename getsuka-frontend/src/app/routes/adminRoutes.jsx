@@ -24,6 +24,8 @@ import EditCouponPage from "../../features/admin-side/coupon-management/pages/Ed
 import InventoryManagementPage from "../../features/admin-side/inventory/pages/InventoryManagementPage";
 import InventoryDetailsPage from "../../features/admin-side/inventory/pages/InventoryDetailsPage";
 
+import AdminReturnsPage from "../../features/admin-side/return-management/pages/AdminReturnsPage";
+
 import AdminProfilePage from "../../features/admin-side/profile/pages/AdminProfilePage";
 import AdminEditProfilePage from "../../features/admin-side/profile/pages/AdminEditProfilePage";
 
@@ -221,6 +223,21 @@ export const adminRoutes = [
       <AdminProtectedRoute>
         <AdminLayout>
           <InventoryDetailsPage />
+        </AdminLayout>
+      </AdminProtectedRoute>
+    ),
+  },
+
+  // =========================================================
+  // RETURNS
+  // =========================================================
+
+  {
+    path: "/admin/returns",
+    element: (
+      <AdminProtectedRoute>
+        <AdminLayout>
+          <AdminReturnsPage />
         </AdminLayout>
       </AdminProtectedRoute>
     ),

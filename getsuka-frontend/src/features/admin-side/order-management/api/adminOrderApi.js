@@ -62,6 +62,42 @@ export const getAdminOrderById = async (
 };
 
 // =========================================================
+// GET ADMIN RETURN REQUESTS
+// =========================================================
+
+export const getAdminReturns = async ({
+  search = "",
+  status = "",
+  sort = "newest",
+  page = 1,
+  limit = 10,
+} = {}) => {
+  try {
+    const response = await adminAxios.get(
+      "/api/admin/orders/returns",
+      {
+        params: {
+          search,
+          status,
+          sort,
+          page,
+          limit,
+        },
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error(
+      "Get Admin Returns Error:",
+      error
+    );
+
+    throw error;
+  }
+};
+
+// =========================================================
 // UPDATE ADMIN ORDER STATUS
 // =========================================================
 

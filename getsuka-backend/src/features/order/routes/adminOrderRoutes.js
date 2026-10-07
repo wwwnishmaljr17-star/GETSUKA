@@ -4,6 +4,7 @@ import adminAuthMiddleware from "../../../middlewares/adminAuthMiddleware.js";
 
 import {
   getAdminOrders,
+  getAdminReturns,
   getAdminOrderById,
   updateAdminOrderStatus,
   approveReturnRequest,
@@ -16,12 +17,8 @@ import {
 const router = express.Router();
 
 // =========================================================
-// GET ALL ORDERS — ADMIN
+// ADMIN — GET ALL ORDERS
 // =========================================================
-
-/*
-  GET /api/admin/orders
-*/
 
 router.get(
   "/",
@@ -30,12 +27,19 @@ router.get(
 );
 
 // =========================================================
-// GET SINGLE ORDER — ADMIN
+// ADMIN — GET ALL RETURN REQUESTS
+// IMPORTANT: This MUST come before /:orderId
 // =========================================================
 
-/*
-  GET /api/admin/orders/:orderId
-*/
+router.get(
+  "/returns",
+  adminAuthMiddleware,
+  getAdminReturns
+);
+
+// =========================================================
+// ADMIN — GET SINGLE ORDER
+// =========================================================
 
 router.get(
   "/:orderId",
@@ -44,12 +48,8 @@ router.get(
 );
 
 // =========================================================
-// UPDATE ORDER STATUS — ADMIN
+// ADMIN — UPDATE ORDER STATUS
 // =========================================================
-
-/*
-  PUT /api/admin/orders/:orderId/status
-*/
 
 router.put(
   "/:orderId/status",
@@ -58,12 +58,8 @@ router.put(
 );
 
 // =========================================================
-// APPROVE RETURN REQUEST — ADMIN
+// ADMIN — APPROVE RETURN
 // =========================================================
-
-/*
-  PUT /api/admin/orders/:orderId/return/approve
-*/
 
 router.put(
   "/:orderId/return/approve",
@@ -72,12 +68,8 @@ router.put(
 );
 
 // =========================================================
-// REJECT RETURN REQUEST — ADMIN
+// ADMIN — REJECT RETURN
 // =========================================================
-
-/*
-  PUT /api/admin/orders/:orderId/return/reject
-*/
 
 router.put(
   "/:orderId/return/reject",
@@ -86,12 +78,8 @@ router.put(
 );
 
 // =========================================================
-// MARK RETURN COLLECTION PENDING — ADMIN
+// ADMIN — MARK RETURN COLLECTION PENDING
 // =========================================================
-
-/*
-  PUT /api/admin/orders/:orderId/return/collection-pending
-*/
 
 router.put(
   "/:orderId/return/collection-pending",
@@ -100,12 +88,8 @@ router.put(
 );
 
 // =========================================================
-// MARK RETURN COLLECTED — ADMIN
+// ADMIN — MARK RETURN COLLECTED
 // =========================================================
-
-/*
-  PUT /api/admin/orders/:orderId/return/collected
-*/
 
 router.put(
   "/:orderId/return/collected",
@@ -114,12 +98,8 @@ router.put(
 );
 
 // =========================================================
-// COMPLETE RETURN — ADMIN
+// ADMIN — COMPLETE RETURN
 // =========================================================
-
-/*
-  PUT /api/admin/orders/:orderId/return/complete
-*/
 
 router.put(
   "/:orderId/return/complete",

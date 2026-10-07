@@ -83,6 +83,15 @@ const orderItemSchema = new mongoose.Schema(
       trim: true,
     },
 
+    cancellationSource: {
+      type: String,
+      enum: [
+        "user",
+        "admin",
+      ],
+      default: null,
+    },
+
     cancelledAt: {
       type: Date,
       default: null,
@@ -331,6 +340,15 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+    },
+
+    cancellationSource: {
+      type: String,
+      enum: [
+        "user",
+        "admin",
+      ],
+      default: null,
     },
 
     cancelledAt: {

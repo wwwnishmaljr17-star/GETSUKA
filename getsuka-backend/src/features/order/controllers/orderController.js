@@ -1318,6 +1318,10 @@ export const cancelUserOrderItem =
         });
       }
 
+      // =====================================================
+      // RESTORE ITEM STOCK
+      // =====================================================
+
       if (
         item.productId &&
         item.variantId
@@ -1360,6 +1364,21 @@ export const cancelUserOrderItem =
 
         await product.save();
       }
+
+      // =====================================================
+      // CALCULATE ITEM REFUND
+      // =====================================================
+      //
+      // The cancelled item's share of the order-level coupon
+      // discount is removed from its refund amount.
+      //
+      // Example:
+      // Item = ₹5,000
+      // Coupon discount allocated to item = ₹500
+      // Refund = ₹4,500
+      //
+      // COD orders do not receive a wallet refund here.
+      // =====================================================
 
       let refundAmount =
         Number(
@@ -1407,6 +1426,10 @@ export const cancelUserOrderItem =
         refundAmount = 0;
       }
 
+      // =====================================================
+      // REFUND ITEM TO WALLET
+      // =====================================================
+
       let refundResult =
         null;
 
@@ -1434,6 +1457,10 @@ export const cancelUserOrderItem =
           });
       }
 
+      // =====================================================
+      // MARK ITEM AS CANCELLED BY USER
+      // =====================================================
+
       item.itemStatus =
         "cancelled";
 
@@ -1451,6 +1478,28 @@ export const cancelUserOrderItem =
           refundAmount;
       }
 
+      // =====================================================
+      // RECALCULATE REMAINING ORDER TOTAL
+      // =====================================================
+      //
+      // The cancelled item stays inside order.items so the
+      // admin/user can see exactly which product was cancelled.
+      //
+      // Only ACTIVE items are included in the new subtotal.
+      // The order-level coupon discount is allocated across
+      // the remaining active items proportionally.
+      //
+      // If every item is cancelled:
+      //   subtotal       = 0
+      //   discount       = 0
+      //   shippingCharge = 0
+      //   totalAmount    = 0
+      //   status         = cancelled
+      //
+      // This makes the admin order summary show the actual
+      // remaining payable amount.
+      // =====================================================
+
       const remainingActiveItems =
         order.items.filter(
           (orderItem) =>
@@ -1459,10 +1508,75 @@ export const cancelUserOrderItem =
             "active"
         );
 
+      const remainingSubtotal =
+        remainingActiveItems.reduce(
+          (
+            sum,
+            orderItem
+          ) =>
+            sum +
+            (Number(
+              orderItem.totalPrice
+            ) || 0),
+          0
+        );
+
+      const originalSubtotal =
+        Number(
+          order.subtotal
+        ) || 0;
+
+      const originalDiscount =
+        Number(
+          order.discount
+        ) || 0;
+
+      let remainingDiscount =
+        0;
+
+      if (
+        remainingSubtotal > 0 &&
+        originalSubtotal > 0 &&
+        originalDiscount > 0
+      ) {
+        remainingDiscount =
+          (
+            remainingSubtotal /
+            originalSubtotal
+          ) *
+          originalDiscount;
+
+        remainingDiscount =
+          Math.min(
+            remainingDiscount,
+            remainingSubtotal
+          );
+
+        remainingDiscount =
+          Math.round(
+            remainingDiscount * 100
+          ) / 100;
+      }
+
       if (
         remainingActiveItems.length ===
         0
       ) {
+        order.subtotal =
+          0;
+
+        order.discount =
+          0;
+
+        order.shippingCharge =
+          0;
+
+        order.tax =
+          0;
+
+        order.totalAmount =
+          0;
+
         order.status =
           "cancelled";
 
@@ -1485,9 +1599,50 @@ export const cancelUserOrderItem =
           order.paymentStatus =
             "refunded";
         }
+      } else {
+        const remainingShippingCharge =
+          Number(
+            order.shippingCharge
+          ) || 0;
+
+        const remainingTax =
+          Number(
+            order.tax
+          ) || 0;
+
+        order.subtotal =
+          Math.round(
+            remainingSubtotal * 100
+          ) / 100;
+
+        order.discount =
+          remainingDiscount;
+
+        order.shippingCharge =
+          remainingShippingCharge;
+
+        order.tax =
+          remainingTax;
+
+        order.totalAmount =
+          Math.max(
+            0,
+            Math.round(
+              (
+                order.subtotal -
+                order.discount +
+                order.tax +
+                order.shippingCharge
+              ) * 100
+            ) / 100
+          );
       }
 
       await order.save();
+
+      // =====================================================
+      // RESPONSE
+      // =====================================================
 
       return res.status(200).json({
         success: true,
@@ -2559,7 +2714,6 @@ export const markReturnCollectionPending =
       });
     }
   };
-
 // =========================================================
 // ADMIN — MARK RETURN COLLECTED / PICKED UP
 // =========================================================
@@ -2598,7 +2752,10 @@ export const markReturnCollected =
         });
       }
 
-      // Pickup is allowed only after approval and pickup scheduling.
+      // =====================================================
+      // ONLY COLLECTION_PENDING CAN BE COLLECTED
+      // =====================================================
+
       if (
         order.returnStatus !==
         "collection_pending"
@@ -2610,6 +2767,162 @@ export const markReturnCollected =
         });
       }
 
+      // =====================================================
+      // FIND ONLY ELIGIBLE RETURN ITEMS
+      // =====================================================
+      //
+      // Cancelled items are NOT returned.
+      // Already refunded items are NOT returned again.
+      //
+      // Example:
+      //
+      // Product A
+      // ₹1000
+      // cancelled + refunded
+      //
+      // Product B
+      // ₹1500
+      // active
+      //
+      // RETURN REFUND = ₹1500
+      // NOT ₹2500
+      // =====================================================
+
+      const returnItems =
+        order.items.filter(
+          (item) => {
+            const itemStatus =
+              item.itemStatus ||
+              "active";
+
+            const refundStatus =
+              item.refundStatus ||
+              "none";
+
+            return (
+              itemStatus ===
+                "active" &&
+              refundStatus !==
+                "refunded"
+            );
+          }
+        );
+
+      if (
+        returnItems.length ===
+        0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "No eligible items are available for return",
+        });
+      }
+
+      // =====================================================
+      // CALCULATE RETURN SUBTOTAL
+      // =====================================================
+
+      const returnSubtotal =
+        returnItems.reduce(
+          (
+            total,
+            item
+          ) => {
+            return (
+              total +
+              (
+                Number(
+                  item.totalPrice
+                ) || 0
+              )
+            );
+          },
+          0
+        );
+
+      if (
+        returnSubtotal <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "No refundable amount found for returned items",
+        });
+      }
+
+      // =====================================================
+      // CALCULATE PROPORTIONAL DISCOUNT
+      // =====================================================
+
+      const originalSubtotal =
+        Number(
+          order.subtotal
+        ) || 0;
+
+      const originalDiscount =
+        Number(
+          order.discount
+        ) || 0;
+
+      let returnDiscount =
+        0;
+
+      if (
+        returnSubtotal > 0 &&
+        originalSubtotal > 0 &&
+        originalDiscount > 0
+      ) {
+        returnDiscount =
+          (
+            returnSubtotal /
+            originalSubtotal
+          ) *
+          originalDiscount;
+
+        returnDiscount =
+          Math.min(
+            returnDiscount,
+            returnSubtotal
+          );
+
+        returnDiscount =
+          Math.round(
+            returnDiscount *
+              100
+          ) / 100;
+      }
+
+      // =====================================================
+      // FINAL REFUND AMOUNT
+      // =====================================================
+
+      const returnRefundAmount =
+        Math.max(
+          0,
+          Math.round(
+            (
+              returnSubtotal -
+              returnDiscount
+            ) * 100
+          ) / 100
+        );
+
+      if (
+        returnRefundAmount <=
+        0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Refund amount is zero",
+        });
+      }
+
+      // =====================================================
+      // MARK RETURN AS COLLECTED
+      // =====================================================
+
       order.returnStatus =
         "collected";
 
@@ -2619,12 +2932,9 @@ export const markReturnCollected =
       // =====================================================
       // REFUND ONLY AFTER PICKUP
       // =====================================================
-      //
-      // Admin cannot approve/reject anymore because the return
-      // is already collected.
-      //
-      // The refund is issued now.
-      // =====================================================
+
+      let refundResult =
+        null;
 
       if (
         order.paymentStatus ===
@@ -2638,38 +2948,139 @@ export const markReturnCollected =
             "cod"
         )
       ) {
-        await creditWallet({
-          userId:
-            order.userId,
+        refundResult =
+          await creditWallet({
+            userId:
+              order.userId,
 
-          amount:
-            Number(
-              order.totalAmount
-            ) || 0,
+            amount:
+              returnRefundAmount,
 
-          reason:
-            "order_return_refund",
+            reason:
+              "order_return_refund",
 
-          description:
-            `Refund for returned order ${order.orderNumber}`,
+            description:
+              `Refund for returned items from order ${order.orderNumber}`,
 
-          orderId:
-            order._id,
+            orderId:
+              order._id,
 
-          orderNumber:
-            order.orderNumber,
-        });
+            orderNumber:
+              order.orderNumber,
+          });
 
-        order.paymentStatus =
-          "refunded";
+        // ===================================================
+        // MARK ONLY RETURNED ITEMS AS REFUNDED
+        // ===================================================
+
+        returnItems.forEach(
+          (item) => {
+            const itemAmount =
+              Number(
+                item.totalPrice
+              ) || 0;
+
+            let itemDiscount =
+              0;
+
+            if (
+              returnSubtotal >
+                0 &&
+              returnDiscount >
+                0
+            ) {
+              itemDiscount =
+                (
+                  itemAmount /
+                  returnSubtotal
+                ) *
+                returnDiscount;
+            }
+
+            const itemRefund =
+              Math.max(
+                0,
+                Math.round(
+                  (
+                    itemAmount -
+                    itemDiscount
+                  ) * 100
+                ) / 100
+              );
+
+            item.refundStatus =
+              "refunded";
+
+            item.refundedAmount =
+              itemRefund;
+          }
+        );
+
+        // ===================================================
+        // MARK ORDER PAYMENT AS REFUNDED
+        // ONLY WHEN ALL ELIGIBLE MONEY HAS BEEN REFUNDED
+        // ===================================================
+
+        const hasUnrefundedItems =
+          order.items.some(
+            (item) => {
+              const itemStatus =
+                item.itemStatus ||
+                "active";
+
+              const refundStatus =
+                item.refundStatus ||
+                "none";
+
+              return (
+                itemStatus ===
+                  "active" &&
+                refundStatus !==
+                  "refunded"
+              );
+            }
+          );
+
+        if (
+          !hasUnrefundedItems
+        ) {
+          order.paymentStatus =
+            "refunded";
+        }
       }
+
+      // =====================================================
+      // SAVE
+      // =====================================================
 
       await order.save();
 
+      // =====================================================
+      // RESPONSE
+      // =====================================================
+
       return res.status(200).json({
         success: true,
+
         message:
-          "Return marked as collected and refund processed",
+          refundResult
+            ? "Return collected and refund added to wallet"
+            : "Return collected successfully",
+
+        refund:
+          refundResult
+            ? {
+                amount:
+                  returnRefundAmount,
+
+                walletBalance:
+                  refundResult
+                    .wallet
+                    ?.balance ??
+                  null,
+              }
+            : null,
+
         order,
       });
     } catch (error) {
@@ -2681,11 +3092,11 @@ export const markReturnCollected =
       return res.status(500).json({
         success: false,
         message:
+          error.message ||
           "Failed to mark return as collected",
       });
     }
   };
-
 // =========================================================
 // ADMIN — COMPLETE RETURN
 // =========================================================
@@ -2812,3 +3223,260 @@ export const completeReturn =
       });
     }
   };
+
+  // =========================================================
+// ADMIN — GET ALL RETURN REQUESTS
+// =========================================================
+
+export const getAdminReturns = async (
+  req,
+  res
+) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      status = "",
+      sort = "newest",
+    } = req.query;
+
+    const currentPage = Math.max(
+      Number.parseInt(page, 10) || 1,
+      1
+    );
+
+    const perPage = Math.min(
+      Math.max(
+        Number.parseInt(limit, 10) || 10,
+        1
+      ),
+      100
+    );
+
+    const skip =
+      (currentPage - 1) * perPage;
+
+    // =======================================================
+    // BASE FILTER
+    // =======================================================
+
+    const filter = {
+      returnStatus: {
+        $nin: ["none", null],
+      },
+    };
+
+    // =======================================================
+    // RETURN STATUS FILTER
+    // =======================================================
+
+    const allowedReturnStatuses = [
+      "pending",
+      "approved",
+      "rejected",
+      "collection_pending",
+      "collected",
+      "completed",
+    ];
+
+    if (
+      status &&
+      allowedReturnStatuses.includes(status)
+    ) {
+      filter.returnStatus = status;
+    }
+
+    // =======================================================
+    // SEARCH
+    // =======================================================
+
+    const trimmedSearch =
+      String(search || "").trim();
+
+    if (trimmedSearch) {
+      const searchRegex = new RegExp(
+        trimmedSearch.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        ),
+        "i"
+      );
+
+      filter.$or = [
+        {
+          orderNumber: searchRegex,
+        },
+        {
+          "shippingAddress.fullName":
+            searchRegex,
+        },
+        {
+          "shippingAddress.phone":
+            searchRegex,
+        },
+        {
+          returnReason: searchRegex,
+        },
+        {
+          "items.productName":
+            searchRegex,
+        },
+      ];
+    }
+
+    // =======================================================
+    // SORT
+    // =======================================================
+
+    const sortOption =
+      sort === "oldest"
+        ? {
+            returnRequestedAt: 1,
+          }
+        : {
+            returnRequestedAt: -1,
+          };
+
+    // =======================================================
+    // FETCH RETURNS + COUNT
+    // =======================================================
+
+    const [
+      orders,
+      totalReturns,
+    ] = await Promise.all([
+      Order.find(filter)
+        .sort(sortOption)
+        .skip(skip)
+        .limit(perPage)
+        .lean(),
+
+      Order.countDocuments(filter),
+    ]);
+
+    // =======================================================
+    // PAGINATION
+    // =======================================================
+
+    const totalPages =
+      Math.ceil(
+        totalReturns / perPage
+      );
+
+    // =======================================================
+    // FORMAT RESPONSE
+    // =======================================================
+
+    const returns = orders.map(
+      (order) => ({
+        _id: order._id,
+
+        orderNumber:
+          order.orderNumber,
+
+        userId:
+          order.userId,
+
+        customer: {
+          name:
+            order.shippingAddress
+              ?.fullName ||
+            "Unknown Customer",
+
+          phone:
+            order.shippingAddress
+              ?.phone ||
+            "—",
+        },
+
+        items:
+          order.items || [],
+
+        totalAmount:
+          order.totalAmount || 0,
+
+        paymentMethod:
+          order.paymentMethod || "",
+
+        paymentStatus:
+          order.paymentStatus || "",
+
+        orderStatus:
+          order.status || "",
+
+        returnStatus:
+          order.returnStatus || "none",
+
+        returnReason:
+          order.returnReason || "",
+
+        returnRequestedAt:
+          order.returnRequestedAt ||
+          null,
+
+        returnApprovedAt:
+          order.returnApprovedAt ||
+          null,
+
+        returnRejectedAt:
+          order.returnRejectedAt ||
+          null,
+
+        returnRejectionReason:
+          order.returnRejectionReason ||
+          "",
+
+        returnCollectionRequestedAt:
+          order.returnCollectionRequestedAt ||
+          null,
+
+        returnCollectedAt:
+          order.returnCollectedAt ||
+          null,
+
+        returnedAt:
+          order.returnedAt ||
+          null,
+
+        createdAt:
+          order.createdAt,
+
+        updatedAt:
+          order.updatedAt,
+      })
+    );
+
+    // =======================================================
+    // RESPONSE
+    // =======================================================
+
+    return res.status(200).json({
+      success: true,
+
+      returns,
+
+      pagination: {
+        currentPage,
+
+        totalPages,
+
+        totalReturns,
+
+        limit:
+          perPage,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get Admin Returns Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch return requests",
+    });
+  }
+};

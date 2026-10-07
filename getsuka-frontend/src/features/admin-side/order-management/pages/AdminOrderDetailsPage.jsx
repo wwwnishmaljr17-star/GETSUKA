@@ -77,6 +77,7 @@ const AdminOrderDetailsPage = () => {
       }
 
       setOrder(orderData);
+
       setSelectedStatus(
         orderData.status || ""
       );
@@ -162,6 +163,32 @@ const AdminOrderDetailsPage = () => {
       );
   };
 
+  // =========================================================
+  // PAYMENT DISPLAY STATUS
+  // =========================================================
+  // COD orders are considered paid once delivered.
+  //
+  // This also fixes older delivered COD orders that still
+  // have "pending" stored from before the COD delivery fix.
+
+  const getDisplayPaymentStatus = () => {
+    if (
+      order?.paymentMethod === "cod" &&
+      order?.status === "delivered"
+    ) {
+      return "paid";
+    }
+
+    return order?.paymentStatus || "pending";
+  };
+
+  const displayPaymentStatus =
+    getDisplayPaymentStatus();
+
+  // =========================================================
+  // ORDER STATUS CLASSES
+  // =========================================================
+
   const getStatusClasses = (value) => {
     switch (value) {
       case "placed":
@@ -190,6 +217,10 @@ const AdminOrderDetailsPage = () => {
     }
   };
 
+  // =========================================================
+  // PAYMENT STATUS CLASSES
+  // =========================================================
+
   const getPaymentStatusClasses = (value) => {
     switch (value) {
       case "paid":
@@ -208,6 +239,10 @@ const AdminOrderDetailsPage = () => {
         return "border-[#dce4ee] bg-[#f7f9fc] text-[#718096]";
     }
   };
+
+  // =========================================================
+  // RETURN STATUS CLASSES
+  // =========================================================
 
   const getReturnStatusClasses = (value) => {
     switch (value) {
@@ -233,6 +268,10 @@ const AdminOrderDetailsPage = () => {
         return "border-[#dce4ee] bg-[#f7f9fc] text-[#718096]";
     }
   };
+
+  // =========================================================
+  // CUSTOMER
+  // =========================================================
 
   const getCustomerName = () => {
     return (
@@ -264,26 +303,10 @@ const AdminOrderDetailsPage = () => {
   // =========================================================
   // ORDER STATUS TRANSITIONS
   // =========================================================
-  // Admin can only move an order forward.
-  //
-  // placed
-  //   -> confirmed
-  //   -> cancelled
-  //
-  // confirmed
-  //   -> shipped
-  //   -> cancelled
-  //
-  // shipped
-  //   -> out_for_delivery
-  //
-  // out_for_delivery
-  //   -> delivered
-  //
-  // delivered / cancelled / returned
-  //   -> no further order-status changes
 
-  const getAvailableStatuses = (currentStatus) => {
+  const getAvailableStatuses = (
+    currentStatus
+  ) => {
     switch (currentStatus) {
       case "placed":
         return [
@@ -395,7 +418,10 @@ const AdminOrderDetailsPage = () => {
       return;
     }
 
-    if (selectedStatus === order.status) {
+    if (
+      selectedStatus ===
+      order.status
+    ) {
       setStatusError(
         "Please select a different status."
       );
@@ -474,6 +500,16 @@ const AdminOrderDetailsPage = () => {
   // =========================================================
   // APPROVE RETURN
   // =========================================================
+  // IMPORTANT:
+  //
+  // Pending
+  //   ↓
+  // Admin approves
+  //   ↓
+  // Collection Pending
+  //
+  // Once approved, collection immediately becomes pending.
+  // The admin does NOT need another manual button click.
 
   const handleApproveReturn = async () => {
     if (!order?._id) {
@@ -489,11 +525,32 @@ const AdminOrderDetailsPage = () => {
           order._id
         );
 
-      const updatedOrder =
+      const approvedOrder =
         response?.order ||
         response?.data?.order ||
         response?.data ||
         response;
+
+      if (!approvedOrder) {
+        await fetchOrder();
+        return;
+      }
+
+      // -------------------------------------------------------
+      // After approval, automatically move the return into
+      // collection_pending.
+      // -------------------------------------------------------
+
+      const collectionResponse =
+        await markReturnCollectionPending(
+          order._id
+        );
+
+      const updatedOrder =
+        collectionResponse?.order ||
+        collectionResponse?.data?.order ||
+        collectionResponse?.data ||
+        collectionResponse;
 
       if (updatedOrder) {
         setOrder(updatedOrder);
@@ -733,11 +790,14 @@ const AdminOrderDetailsPage = () => {
     const returnStatus =
       order.returnStatus || "none";
 
+    // -------------------------------------------------------
+    // NO RETURN
+    // -------------------------------------------------------
+
     if (returnStatus === "none") {
       return (
         <div className="rounded-[11px] border border-[#e1e8f1] bg-[#f8faff] p-[16px]">
           <div className="flex items-center justify-between gap-[15px]">
-
             <div>
               <p className="text-[7px] font-semibold uppercase tracking-[0.14em] text-[#718096]">
                 Return Request
@@ -751,7 +811,6 @@ const AdminOrderDetailsPage = () => {
             <span className="inline-flex rounded-full border border-[#dce4ee] bg-white px-[9px] py-[5px] text-[6px] font-medium uppercase tracking-[0.08em] text-[#718096]">
               No Request
             </span>
-
           </div>
         </div>
       );
@@ -779,7 +838,12 @@ const AdminOrderDetailsPage = () => {
               returnStatus
             )}`}
           >
-            {formatStatus(returnStatus)}
+            {returnStatus ===
+            "collection_pending"
+              ? "Pickup Pending"
+              : formatStatus(
+                  returnStatus
+                )}
           </span>
 
         </div>
@@ -803,7 +867,8 @@ const AdminOrderDetailsPage = () => {
 
           {/* REJECTION REASON */}
 
-          {returnStatus === "rejected" &&
+          {returnStatus ===
+            "rejected" &&
             order.returnRejectionReason && (
               <div className="mt-[10px] rounded-[9px] border border-[#ffd1d8] bg-[#fff5f6] p-[13px]">
 
@@ -872,9 +937,12 @@ const AdminOrderDetailsPage = () => {
 
           </div>
 
-          {/* RETURN ACTIONS */}
+          {/* =================================================
+              PENDING
+          ================================================= */}
 
-          {returnStatus === "pending" && (
+          {returnStatus ===
+            "pending" && (
             <div className="mt-[14px]">
 
               <p className="text-[7px] font-semibold uppercase tracking-[0.12em] text-[#718096]">
@@ -888,7 +956,9 @@ const AdminOrderDetailsPage = () => {
                   onClick={
                     handleApproveReturn
                   }
-                  disabled={returnLoading}
+                  disabled={
+                    returnLoading
+                  }
                   className="h-[42px] rounded-[8px] bg-[#1557f5] px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#0d49d8] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {returnLoading
@@ -900,14 +970,21 @@ const AdminOrderDetailsPage = () => {
 
                   <input
                     type="text"
-                    value={rejectionReason}
-                    onChange={(event) =>
+                    value={
+                      rejectionReason
+                    }
+                    onChange={(
+                      event
+                    ) =>
                       setRejectionReason(
-                        event.target.value
+                        event.target
+                          .value
                       )
                     }
                     placeholder="Rejection reason..."
-                    disabled={returnLoading}
+                    disabled={
+                      returnLoading
+                    }
                     className="h-[42px] min-w-0 flex-1 rounded-[8px] border border-[#dfe6ef] bg-[#f9fbfe] px-[11px] text-[8px] text-[#263247] outline-none placeholder:text-[#aab4c2] focus:border-[#ef8b9b] focus:bg-white"
                   />
 
@@ -916,7 +993,9 @@ const AdminOrderDetailsPage = () => {
                     onClick={
                       handleRejectReturn
                     }
-                    disabled={returnLoading}
+                    disabled={
+                      returnLoading
+                    }
                     className="h-[42px] rounded-[8px] border border-[#ffd0d8] bg-[#fff5f6] px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-[#d93650] transition hover:border-[#f09baa] hover:bg-[#ffecef] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     REJECT
@@ -929,36 +1008,45 @@ const AdminOrderDetailsPage = () => {
             </div>
           )}
 
-          {returnStatus === "approved" && (
-            <div className="mt-[14px]">
-
-              <button
-                type="button"
-                onClick={
-                  handleCollectionPending
-                }
-                disabled={returnLoading}
-                className="h-[42px] w-full rounded-[8px] bg-[#1557f5] px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#0d49d8] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {returnLoading
-                  ? "PROCESSING..."
-                  : "MARK COLLECTION PENDING"}
-              </button>
-
-            </div>
-          )}
+          {/* =================================================
+              COLLECTION PENDING / PICKUP PENDING
+          ================================================= */}
 
           {returnStatus ===
             "collection_pending" && (
             <div className="mt-[14px]">
+
+              <div className="rounded-[9px] border border-[#ffd2a8] bg-[#fff8f0] p-[13px]">
+
+                <div className="flex items-start gap-[10px]">
+
+                  <div className="mt-[1px] flex h-[25px] w-[25px] shrink-0 items-center justify-center rounded-full bg-[#fff0df] text-[12px]">
+                    📦
+                  </div>
+
+                  <div>
+                    <p className="text-[8px] font-semibold uppercase tracking-[0.1em] text-[#c56b19]">
+                      Pickup Pending
+                    </p>
+
+                    <p className="mt-[5px] text-[8px] leading-5 text-[#8d6a48]">
+                      Return request approved. The returned product is now waiting for pickup / collection.
+                    </p>
+                  </div>
+
+                </div>
+
+              </div>
 
               <button
                 type="button"
                 onClick={
                   handleCollected
                 }
-                disabled={returnLoading}
-                className="h-[42px] w-full rounded-[8px] bg-[#1557f5] px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#0d49d8] disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={
+                  returnLoading
+                }
+                className="mt-[9px] h-[42px] w-full rounded-[8px] bg-[#1557f5] px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#0d49d8] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {returnLoading
                   ? "PROCESSING..."
@@ -968,13 +1056,58 @@ const AdminOrderDetailsPage = () => {
             </div>
           )}
 
-          {returnStatus === "collected" && (
+          {/* =================================================
+              APPROVED FALLBACK
+          ================================================= */}
+
+          {returnStatus ===
+            "approved" && (
+            <div className="mt-[14px]">
+
+              <div className="rounded-[9px] border border-[#b9d0ff] bg-[#eef4ff] p-[13px]">
+
+                <p className="text-[8px] font-semibold uppercase tracking-[0.1em] text-[#1557f5]">
+                  Return Approved
+                </p>
+
+                <p className="mt-[5px] text-[8px] leading-5 text-[#5f76a8]">
+                  Return approved. Pickup / collection is being arranged.
+                </p>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  handleCollectionPending
+                }
+                disabled={
+                  returnLoading
+                }
+                className="mt-[9px] h-[42px] w-full rounded-[8px] border border-[#b9d0ff] bg-white px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-[#1557f5] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {returnLoading
+                  ? "PROCESSING..."
+                  : "MARK PICKUP PENDING"}
+              </button>
+
+            </div>
+          )}
+
+          {/* =================================================
+              COLLECTED
+          ================================================= */}
+
+          {returnStatus ===
+            "collected" && (
             <div className="mt-[14px]">
 
               <div className="rounded-[8px] border border-[#fff0c8] bg-[#fffaf0] p-[11px]">
+
                 <p className="text-[8px] leading-5 text-[#8d6817]">
-                  The returned product has been marked as collected. Complete the return to restore the product stock.
+                  The returned product has been marked as collected. The refund has been processed. Complete the return to restore the product stock.
                 </p>
+
               </div>
 
               <button
@@ -982,7 +1115,9 @@ const AdminOrderDetailsPage = () => {
                 onClick={
                   handleCompleteReturn
                 }
-                disabled={returnLoading}
+                disabled={
+                  returnLoading
+                }
                 className="mt-[9px] h-[42px] w-full rounded-[8px] bg-[#11845b] px-[15px] text-[8px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-[#0c704c] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {returnLoading
@@ -993,7 +1128,12 @@ const AdminOrderDetailsPage = () => {
             </div>
           )}
 
-          {returnStatus === "completed" && (
+          {/* =================================================
+              COMPLETED
+          ================================================= */}
+
+          {returnStatus ===
+            "completed" && (
             <div className="mt-[14px] rounded-[8px] border border-[#bcebd5] bg-[#effcf6] p-[12px]">
 
               <p className="text-[8px] font-medium text-[#11845b]">
@@ -1003,7 +1143,12 @@ const AdminOrderDetailsPage = () => {
             </div>
           )}
 
-          {returnStatus === "rejected" && (
+          {/* =================================================
+              REJECTED
+          ================================================= */}
+
+          {returnStatus ===
+            "rejected" && (
             <div className="mt-[14px] rounded-[8px] border border-[#ffd0d8] bg-[#fff5f6] p-[12px]">
 
               <p className="text-[8px] font-medium text-[#d93650]">
@@ -1013,11 +1158,15 @@ const AdminOrderDetailsPage = () => {
             </div>
           )}
 
+          {/* RETURN ERROR */}
+
           {returnError && (
             <div className="mt-[10px] rounded-[8px] border border-[#ffd0d8] bg-[#fff5f6] p-[11px]">
+
               <p className="text-[8px] text-[#d93650]">
                 {returnError}
               </p>
+
             </div>
           )}
 
@@ -1257,7 +1406,10 @@ const AdminOrderDetailsPage = () => {
               </p>
 
               <p className="mt-[3px] text-[8px] text-[#9aa6b6]">
-                Placed on {formatDateTime(order.createdAt)}
+                Placed on{" "}
+                {formatDateTime(
+                  order.createdAt
+                )}
               </p>
 
             </div>
@@ -1269,17 +1421,19 @@ const AdminOrderDetailsPage = () => {
                   order.status
                 )}`}
               >
-                {formatStatus(order.status)}
+                {formatStatus(
+                  order.status
+                )}
               </span>
 
               <span
                 className={`inline-flex rounded-full border px-[10px] py-[6px] text-[7px] font-medium uppercase tracking-[0.08em] ${getPaymentStatusClasses(
-                  order.paymentStatus
+                  displayPaymentStatus
                 )}`}
               >
                 Payment:{" "}
                 {formatStatus(
-                  order.paymentStatus
+                  displayPaymentStatus
                 )}
               </span>
 
@@ -1378,9 +1532,7 @@ const AdminOrderDetailsPage = () => {
                 {", "}
                 {order?.shippingAddress
                   ?.state || "—"}
-
                 {" - "}
-
                 {order?.shippingAddress
                   ?.pincode || "—"}
 
@@ -1440,7 +1592,8 @@ const AdminOrderDetailsPage = () => {
                     Number(
                       item?.totalPrice || 0
                     ) ||
-                    unitPrice * quantity;
+                    unitPrice *
+                      quantity;
 
                   return (
                     <div
@@ -1461,24 +1614,28 @@ const AdminOrderDetailsPage = () => {
                         <div className="mt-[6px] flex flex-wrap gap-x-[12px] gap-y-[4px]">
 
                           <span className="text-[7px] text-[#8996a8]">
-                            Qty: {quantity}
+                            Qty:{" "}
+                            {quantity}
                           </span>
 
                           {item?.size && (
                             <span className="text-[7px] text-[#8996a8]">
-                              Size: {item.size}
+                              Size:{" "}
+                              {item.size}
                             </span>
                           )}
 
                           {item?.color && (
                             <span className="text-[7px] text-[#8996a8]">
-                              Color: {item.color}
+                              Color:{" "}
+                              {item.color}
                             </span>
                           )}
 
                           {item?.sku && (
                             <span className="text-[7px] text-[#8996a8]">
-                              SKU: {item.sku}
+                              SKU:{" "}
+                              {item.sku}
                             </span>
                           )}
 
@@ -1549,11 +1706,11 @@ const AdminOrderDetailsPage = () => {
 
                 <span
                   className={`rounded-full border px-[8px] py-[5px] text-[6px] font-medium uppercase tracking-[0.08em] ${getPaymentStatusClasses(
-                    order.paymentStatus
+                    displayPaymentStatus
                   )}`}
                 >
                   {formatStatus(
-                    order.paymentStatus
+                    displayPaymentStatus
                   )}
                 </span>
 
@@ -1679,9 +1836,12 @@ const AdminOrderDetailsPage = () => {
                   setSelectedStatus(
                     event.target.value
                   );
+
                   setStatusError("");
                 }}
-                disabled={statusLoading}
+                disabled={
+                  statusLoading
+                }
                 className="mt-[9px] h-[43px] w-full rounded-[8px] border border-[#dfe6ef] bg-[#f9fbfe] px-[12px] text-[9px] text-[#263247] outline-none transition hover:border-[#c4d2e5] focus:border-[#6f9cf7] focus:bg-white"
               >
                 {getAvailableStatuses(
@@ -1689,10 +1849,16 @@ const AdminOrderDetailsPage = () => {
                 ).map(
                   (statusOption) => (
                     <option
-                      key={statusOption.value}
-                      value={statusOption.value}
+                      key={
+                        statusOption.value
+                      }
+                      value={
+                        statusOption.value
+                      }
                     >
-                      {statusOption.label}
+                      {
+                        statusOption.label
+                      }
                     </option>
                   )
                 )}
