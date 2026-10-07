@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-import Wallet from "../models/Wallet.js";
+import Wallet from "../models/wallet.js";
 
 // =========================================================
 // GET USER WALLET
