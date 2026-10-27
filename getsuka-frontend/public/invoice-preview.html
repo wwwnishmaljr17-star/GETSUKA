@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GETSUKA-Invoice-ORD-SCREENSHOT-DEMO.pdf</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html, body {
+        background: #09090d;
+        color: #f8fafc;
+        font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      /* TOOLBAR - HIDDEN WHEN PRINTING */
+      .action-bar {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: #0d0f15;
+        border-bottom: 1px solid rgba(239, 68, 68, 0.35);
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+      }
+
+      .action-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #cbd5e1;
+      }
+
+      .action-title .kanji {
+        color: #ef4444;
+        font-family: 'Cinzel', serif;
+        font-weight: 900;
+        font-size: 18px;
+      }
+
+      .action-buttons {
+        display: flex;
+        gap: 12px;
+      }
+
+      .btn {
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 18px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+        color: #ffffff;
+        border: 1px solid #ef4444;
+        box-shadow: 0 2px 10px rgba(239, 68, 68, 0.35);
+      }
+
+      .btn-primary:hover {
+        background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+        box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
+        transform: translateY(-1px);
+      }
+
+      .btn-secondary {
+        background: #161922;
+        color: #94a3b8;
+        border: 1px solid #2d3244;
+      }
+
+      .btn-secondary:hover {
+        color: #ffffff;
+        border-color: #ef4444;
+      }
+
+      /* INVOICE CONTAINER */
+      .invoice-wrapper {
+        max-width: 900px;
+        margin: 30px auto 60px;
+        padding: 0 20px;
+        position: relative;
+      }
+
+      .invoice-card {
+        position: relative;
+        background: #0f1118;
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        border-radius: 8px;
+        padding: 36px 40px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+        overflow: hidden;
+      }
+
+      /* WATERMARK */
+      .watermark-art {
+        position: absolute;
+        right: -40px;
+        bottom: 40px;
+        width: 480px;
+        height: 480px;
+        background-image: url('/assets/getsuka-anime-art.png');
+        background-size: cover;
+        background-position: center;
+        opacity: 0.04;
+        pointer-events: none;
+        mix-blend-mode: screen;
+        z-index: 0;
+      }
+
+      .invoice-content {
+        position: relative;
+        z-index: 1;
+      }
+
+      /* HEADER */
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+        padding-bottom: 24px;
+        position: relative;
+      }
+
+      .brand-section {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .brand-name {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: 'Cinzel', serif;
+        font-size: 32px;
+        font-weight: 900;
+        letter-spacing: 2.5px;
+        color: #ffffff;
+        text-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+      }
+
+      .brand-kanji {
+        color: #ef4444;
+        font-weight: 900;
+        font-size: 28px;
+      }
+
+      .brand-sub {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #ef4444;
+      }
+
+      .brand-tagline {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #94a3b8;
+        letter-spacing: 0.8px;
+      }
+
+      .invoice-meta-header {
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+      }
+
+      .invoice-title-text {
+        font-family: 'Cinzel', serif;
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: 3px;
+        color: #ffffff;
+      }
+
+      .invoice-num {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #cbd5e1;
+        letter-spacing: 1px;
+      }
+
+      .invoice-date {
+        font-size: 11px;
+        color: #94a3b8;
+      }
+
+      /* STATUS BADGES */
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 5px 12px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+      }
+
+      .status-badge::before {
+        content: '';
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+
+      .badge-partial {
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.45);
+        color: #f87171;
+      }
+      .badge-partial::before {
+        background: #ef4444;
+        box-shadow: 0 0 6px #ef4444;
+      }
+
+      /* ART HERO STRIP */
+      .art-hero-strip {
+        margin-top: 20px;
+        height: 72px;
+        border-radius: 6px;
+        background-image: linear-gradient(90deg, rgba(15, 17, 24, 0.95) 0%, rgba(15, 17, 24, 0.4) 50%, rgba(15, 17, 24, 0.95) 100%), url('/assets/getsuka-anime-art.png');
+        background-size: cover;
+        background-position: center 30%;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+      }
+
+      .art-hero-text {
+        font-family: 'Cinzel', serif;
+        font-size: 13px;
+        letter-spacing: 2.5px;
+        font-weight: 700;
+        color: #f1f5f9;
+        text-transform: uppercase;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      }
+
+      .art-hero-sub {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        color: #ef4444;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      /* META GRID */
+      .meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin: 24px 0;
+      }
+
+      .meta-box {
+        background: #141722;
+        border: 1px solid #23283a;
+        border-top: 2px solid #ef4444;
+        border-radius: 6px;
+        padding: 16px 20px;
+      }
+
+      .meta-heading {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #ef4444;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .meta-body {
+        font-size: 12px;
+        color: #cbd5e1;
+        line-height: 1.7;
+      }
+
+      .meta-body strong {
+        color: #ffffff;
+        font-size: 13px;
+      }
+
+      .meta-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+
+      .meta-key {
+        color: #94a3b8;
+      }
+
+      .meta-val {
+        color: #f1f5f9;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      /* PRODUCTS TABLE */
+      .table-container {
+        margin: 28px 0;
+        border: 1px solid #23283a;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #12141e;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      thead tr {
+        background: #181c2a;
+        border-bottom: 1px solid rgba(239, 68, 68, 0.4);
+      }
+
+      th {
+        padding: 12px 14px;
+        color: #94a3b8;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        text-align: left;
+      }
+
+      tbody tr {
+        border-bottom: 1px solid #1e2232;
+        transition: background 0.15s ease;
+      }
+
+      tbody tr:last-child {
+        border-bottom: none;
+      }
+
+      td {
+        padding: 14px;
+        vertical-align: top;
+        color: #cbd5e1;
+      }
+
+      .row-cancelled {
+        background: rgba(239, 68, 68, 0.04);
+      }
+
+      .col-num {
+        width: 30px;
+        color: #64748b;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+      }
+
+      .col-desc {
+        width: 34%;
+      }
+
+      .product-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 4px;
+      }
+
+      .variant-info {
+        font-size: 11px;
+        color: #94a3b8;
+        margin-top: 4px;
+      }
+
+      .mod-note {
+        font-size: 10px;
+        color: #f87171;
+        margin-top: 4px;
+        line-height: 1.4;
+      }
+
+      .col-price {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+        white-space: nowrap;
+      }
+
+      .col-qty {
+        white-space: nowrap;
+        font-size: 11px;
+      }
+
+      .qty-line {
+        margin-bottom: 2px;
+      }
+
+      .qty-line strong {
+        color: #94a3b8;
+        font-weight: 600;
+      }
+
+      .qty-retained {
+        color: #4ade80;
+      }
+
+      .qty-cancelled {
+        color: #f87171;
+      }
+
+      .col-discount {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .discount-val {
+        color: #38bdf8;
+      }
+
+      .col-refund {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .refund-val {
+        color: #f87171;
+        font-weight: 700;
+      }
+
+      .col-total {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 700;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .net-val {
+        color: #ffffff;
+      }
+
+      .muted-val {
+        color: #64748b;
+        text-decoration: line-through;
+      }
+
+      .item-tag {
+        display: inline-block;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+
+      .tag-active {
+        background: rgba(34, 197, 94, 0.12);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+      }
+
+      .tag-cancelled {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+      }
+
+      .muted {
+        color: #64748b;
+      }
+
+      /* SUMMARY SECTION */
+      .bottom-section {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 24px;
+        margin-top: 24px;
+        align-items: flex-start;
+      }
+
+      .notes-card {
+        background: #141722;
+        border: 1px solid #23283a;
+        border-left: 3px solid #ef4444;
+        border-radius: 6px;
+        padding: 18px 20px;
+      }
+
+      .notes-heading {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #ef4444;
+        margin-bottom: 8px;
+      }
+
+      .notes-body {
+        font-size: 11px;
+        color: #94a3b8;
+        line-height: 1.6;
+      }
+
+      .seal-art {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: 'Cinzel', serif;
+        font-size: 11px;
+        color: #cbd5e1;
+        letter-spacing: 1px;
+      }
+
+      .seal-stamp {
+        border: 1px solid #ef4444;
+        color: #ef4444;
+        padding: 2px 6px;
+        border-radius: 2px;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .summary-card {
+        background: #141722;
+        border: 1px solid #23283a;
+        border-radius: 6px;
+        padding: 20px;
+      }
+
+      .summary-title {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #cbd5e1;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #23283a;
+        margin-bottom: 12px;
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        font-size: 12px;
+        color: #94a3b8;
+      }
+
+      .summary-row.bold {
+        color: #ffffff;
+        font-weight: 600;
+      }
+
+      .summary-row.refund {
+        color: #f87171;
+        font-weight: 700;
+        padding: 8px 0;
+        border-top: 1px dashed rgba(239, 68, 68, 0.3);
+        border-bottom: 1px dashed rgba(239, 68, 68, 0.3);
+        margin: 4px 0;
+      }
+
+      .summary-value {
+        font-family: 'JetBrains Mono', monospace;
+        text-align: right;
+      }
+
+      /* HERO RETAINED BALANCE */
+      .retained-hero-box {
+        margin-top: 16px;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(15, 17, 24, 0.95) 100%);
+        border: 1px solid #ef4444;
+        border-radius: 6px;
+        padding: 16px;
+        box-shadow: 0 4px 20px rgba(239, 68, 68, 0.18);
+      }
+
+      .retained-hero-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+
+      .retained-label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #f1f5f9;
+      }
+
+      .retained-amount {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 22px;
+        font-weight: 900;
+        color: #ffffff;
+        text-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+      }
+
+      .retained-caption {
+        font-size: 10px;
+        color: #cbd5e1;
+        line-height: 1.4;
+        margin-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding-top: 6px;
+      }
+
+      /* FOOTER */
+      .footer {
+        margin-top: 40px;
+        padding-top: 24px;
+        border-top: 1px solid #23283a;
+        text-align: center;
+        position: relative;
+      }
+
+      .footer-signature {
+        font-family: 'Cinzel', serif;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 2.5px;
+        color: #ffffff;
+        margin-bottom: 6px;
+      }
+
+      .footer-sub {
+        font-size: 11px;
+        color: #ef4444;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+
+      .footer-legal {
+        font-size: 10px;
+        color: #64748b;
+        line-height: 1.6;
+      }
+
+      /* PRINT STYLES */
+      @media print {
+        .no-print {
+          display: none !important;
+        }
+
+        html, body {
+          background: #09090d !important;
+          color: #f8fafc !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+
+        .invoice-wrapper {
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .invoice-card {
+          border: 1px solid rgba(239, 68, 68, 0.4) !important;
+          box-shadow: none !important;
+          border-radius: 0 !important;
+          padding: 20px 24px !important;
+        }
+
+        tr, .meta-box, .notes-card, .summary-card, .retained-hero-box {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+
+        @page {
+          size: A4;
+          margin: 8mm 10mm;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- TOP TOOLBAR -->
+    <div class="action-bar no-print">
+      <div class="action-title">
+        <span class="kanji">月下</span>
+        <span>GETSUKA Invoice Preview</span>
+      </div>
+      <div class="action-buttons">
+        <button class="btn btn-secondary" onclick="window.close()">✕ Close</button>
+        <button class="btn btn-primary" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      </div>
+    </div>
+
+    <div class="invoice-wrapper">
+      <div class="invoice-card">
+        <div class="watermark-art"></div>
+
+        <div class="invoice-content">
+          <!-- HEADER -->
+          <div class="header">
+            <div class="brand-section">
+              <div class="brand-name">
+                <span>GETSUKA</span>
+                <span class="brand-kanji">月下</span>
+              </div>
+              <div class="brand-sub">Anime Fashion Store · Tokyo &amp; Global</div>
+              <div class="brand-tagline">Cinematic Streetwear for the Discerning Fan</div>
+            </div>
+
+            <div class="invoice-meta-header">
+              <div class="invoice-title-text">TAX INVOICE</div>
+              <div class="invoice-num">INV-ORD-2026-10536</div>
+              <div class="invoice-date">Issue Date: 20 Oct 2026</div>
+              <div class="status-badge badge-partial">
+                PARTIALLY REFUNDED
+              </div>
+            </div>
+          </div>
+
+          <!-- ART HERO STRIP -->
+          <div class="art-hero-strip">
+            <div class="art-hero-text">
+              GETSUKA OFFICIAL INVOICE
+            </div>
+            <div class="art-hero-sub">
+              // ARCHIVAL FINANCIAL RECORD //
+            </div>
+          </div>
+
+          <!-- META INFO GRID -->
+          <div class="meta-grid">
+            <div class="meta-box">
+              <div class="meta-heading">
+                <span>✦</span>
+                <span>Customer &amp; Billing Address</span>
+              </div>
+              <div class="meta-body">
+                <strong>Nishmal V.</strong><br />
+                Skyline Neon Tower, Flat 402, Cyber Street<br />
+                Kochi, Kerala - 682001<br />
+                Phone: +91 98765 43210
+              </div>
+            </div>
+
+            <div class="meta-box">
+              <div class="meta-heading">
+                <span>✦</span>
+                <span>Order &amp; Payment Specifications</span>
+              </div>
+              <div class="meta-body">
+                <div class="meta-row">
+                  <span class="meta-key">Order Number:</span>
+                  <span class="meta-val">ORD-2026-10536</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">Order Date:</span>
+                  <span class="meta-val">19 Oct 2026, 06:45 PM</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">Payment Method:</span>
+                  <span class="meta-val">Razorpay (UPI / Card)</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">Delivery Option:</span>
+                  <span class="meta-val">Standard Delivery</span>
+                </div>
+                <div class="meta-row">
+                  <span class="meta-key">Payment Status:</span>
+                  <span class="meta-val">Paid</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ITEMS TABLE -->
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-num">#</th>
+                  <th class="col-desc">Product &amp; Details</th>
+                  <th class="col-price">Unit Price</th>
+                  <th class="col-qty">Quantities</th>
+                  <th class="col-discount">Discount</th>
+                  <th class="col-refund">Refunded</th>
+                  <th class="col-total">Retained Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="row-cancelled">
+                  <td class="col-num">1</td>
+                  <td class="col-desc">
+                    <div class="product-name">GETSUKA Sukuna Special Grade Oversized Hoodie</div>
+                    <span class="item-tag tag-cancelled">CANCELLED</span>
+                    <div class="variant-info">Size: XL · Color: Crimson Onyx · SKU: HOOD-SUK-XL</div>
+                    <div class="mod-note">Cancel reason: Customer requested partial cancellation</div>
+                  </td>
+                  <td class="col-price">₹5,536.00</td>
+                  <td class="col-qty">
+                    <div class="qty-line"><strong>Orig:</strong> 1</div>
+                    <div class="qty-line qty-zero"><strong>Kept:</strong> 0</div>
+                    <div class="qty-line qty-cancelled"><strong>Canc:</strong> 1</div>
+                  </td>
+                  <td class="col-discount"><span class="muted">—</span></td>
+                  <td class="col-refund"><span class="refund-val">- ₹5,536.00</span></td>
+                  <td class="col-total"><span class="muted-val">₹0.00</span></td>
+                </tr>
+                <tr>
+                  <td class="col-num">2</td>
+                  <td class="col-desc">
+                    <div class="product-name">GETSUKA Gear 5 Sun God Cyber Bomber Jacket</div>
+                    <span class="item-tag tag-active">ACTIVE / RETAINED</span>
+                    <div class="variant-info">Size: L · Color: Midnight White · SKU: JKT-G5-L</div>
+                  </td>
+                  <td class="col-price">₹5,000.00</td>
+                  <td class="col-qty">
+                    <div class="qty-line"><strong>Orig:</strong> 1</div>
+                    <div class="qty-line qty-retained"><strong>Kept:</strong> 1</div>
+                  </td>
+                  <td class="col-discount"><span class="muted">—</span></td>
+                  <td class="col-refund"><span class="muted">—</span></td>
+                  <td class="col-total"><span class="net-val">₹5,000.00</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- SUMMARY & NOTES -->
+          <div class="bottom-section">
+            <div class="notes-card">
+              <div class="notes-heading">Financial &amp; Refund Policy Notes</div>
+              <div class="notes-body">
+                • All refunds for cancelled or returned merchandise are automatically credited to your GETSUKA Wallet.<br />
+                • Express delivery fees (₹149) are non-refundable once fulfillment has initiated.<br />
+                • Proportional coupon discounts are calculated at the line-item level.<br />
+                • Unpaid Cash on Delivery cancellations do not produce wallet credits.<br />
+                • For questions regarding this invoice, please reach out to support@getsuka.com.
+              </div>
+              <div class="seal-art">
+                <span class="seal-stamp">月下品質保証</span>
+                <span>GETSUKA AUTHENTIC MERCHANDISE</span>
+              </div>
+            </div>
+
+            <div class="summary-card">
+              <div class="summary-title">Financial Breakdown</div>
+
+              <div class="summary-row">
+                <span>Original Subtotal</span>
+                <span class="summary-value">₹10,536.00</span>
+              </div>
+
+              <div class="summary-row">
+                <span>Shipping Charge</span>
+                <span class="summary-value">FREE</span>
+              </div>
+
+              <div class="summary-row bold">
+                <span>Original Order Total</span>
+                <span class="summary-value">₹10,536.00</span>
+              </div>
+
+              <div class="summary-row refund">
+                <span>Total Refunded to Wallet</span>
+                <span class="summary-value">- ₹5,536.00</span>
+              </div>
+
+              <!-- RETAINED VALUE HERO -->
+              <div class="retained-hero-box">
+                <div class="retained-hero-header">
+                  <span class="retained-label">NET RETAINED ORDER VALUE</span>
+                  <span class="retained-amount">₹5,000.00</span>
+                </div>
+                <div class="retained-caption">
+                  ₹5,536.00 has been refunded to your GETSUKA wallet. ₹5,000.00 represents the active retained order value.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FOOTER -->
+          <div class="footer">
+            <div class="footer-signature">GETSUKA · 月下</div>
+            <div class="footer-sub">Crafted in the Shadows • Designed for Eternity</div>
+            <div class="footer-legal">
+              This is an electronically generated tax invoice and does not require a physical signature.<br />
+              GETSUKA Apparel &amp; Fashion Lifestyle Private Limited · support@getsuka.com · https://getsuka.com
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

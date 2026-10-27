@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mocha: #6F4E37;
+  --color-mocha-hover: #5B3F2C;
+  --color-mocha-light: #8A6447;
+  --color-mocha-subtle: #F5EFEB;
+  
+  --color-platinum: #E5E4E2;
+  --color-platinum-light: #F5F5F4;
+  --color-platinum-dark: #D1D0CD;
+  
+  --color-lavender: #E6E0F0;
+  --color-lavender-light: #F5F2FA;
+  --color-lavender-dark: #CDC4DF;
+  --color-lavender-accent: #8E78A8;
+  
+  --color-primary-text: #252321;
+  --color-secondary-text: #716C67;
+  --color-main-bg: #F4F0F7;
+  --color-surface-white: #FFFFFF;
+  --color-surface-dark: #211B18;
+  --color-subtle-border: #D8D3CF;
+
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: #F4F0F7;
+    color: #252321;
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Smooth luxury transitions without shaking/wobble */
+.motion-subtle {
+  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.5s ease-out;
+}
+
+.group:hover .motion-subtle {
+  transform: scale(1.04);
+}
